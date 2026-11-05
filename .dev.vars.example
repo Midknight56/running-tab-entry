@@ -1,0 +1,7 @@
+PAYPAL_CLIENT_ID=your sandbox app client id
+PAYPAL_CLIENT_SECRET=your sandbox app secret
+SESSION_SECRET=any long random string
+LEDGER_SIGNING_KEY=any long random signing key
+DEBUG_SECRET=any random string
+# Use a local stand in model on localhost only.
+DEV_FAKE_AI=1

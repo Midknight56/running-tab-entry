@@ -1,0 +1,17 @@
+node_modules/
+.wrangler/
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+.env
+.env.*
+dist/
+public/
+test-results/
+playwright-report/
+*.log
+captures/
+stills/
+
+# Helper task files and logs stay out of the repo.
+.helpers/

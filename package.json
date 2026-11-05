@@ -1,0 +1,25 @@
+{
+  "name": "running-tab",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "npm run desk:build && wrangler deploy",
+    "test": "vitest run && npm --prefix desk test",
+    "check": "tsc --noEmit",
+    "desk:build": "npm --prefix desk run build",
+    "e2e": "playwright test"
+  },
+  "dependencies": {
+    "mcp-on-workers": "github:Midknight56/mcp-on-workers#94ba87e3f1dabbd5cd0afab1797d5d55ce8217bc"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261023.1",
+    "@playwright/test": "^1.64.1",
+    "@types/node": "^24.0.0",
+    "typescript": "~5.9.3",
+    "vitest": "^3.2.4",
+    "wrangler": "^4.152.0"
+  }
+}
