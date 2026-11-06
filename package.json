@@ -8,6 +8,8 @@
     "deploy": "npm run desk:build && wrangler deploy",
     "test": "vitest run && npm --prefix desk test",
     "check": "tsc --noEmit",
+    "check:model": "node tools/check-model.mjs",
+    "predeploy": "npm run check:model",
     "desk:build": "npm --prefix desk run build",
     "e2e": "playwright test"
   },

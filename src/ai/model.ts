@@ -23,17 +23,19 @@ export interface GateDeps {
 export class ModelGate {
   constructor(private d: GateDeps) {}
 
-  async ask(job: Job, messages: ChatMessage[], maxTokens: number, cacheKey: string): Promise<ModelAnswer | null> {
-    const key = `${job}:${cacheKey}`
+  async ask(job: Job, messages: ChatMessage[], maxTokens: number, cacheKey: string, schema?: Record<string, unknown>): Promise<ModelAnswer | null> {
+    const system = messages.find((message) => message.role === 'system')?.content
+    const p = system === undefined ? 'none' : (await sha256(system)).slice(0, 12)
+    const key = `${job}:${MODEL_ID}:${p}:${cacheKey}`
     const now = this.d.now ?? Date.now
     const hit = await this.d.db.prepare('SELECT value_json FROM cache WHERE key = ?').bind(key).first<string>('value_json')
     if (hit !== null) {
       await this.trace(job, 0, true)
       return { text: JSON.parse(hit) as string, source: 'cache', neurons: 0 }
     }
-    if (REPLAY[key] !== undefined) {
+    if (this.d.mode !== 'live' && REPLAY[`${job}:${cacheKey}`] !== undefined) {
       await this.trace(job, 0, true)
-      return { text: REPLAY[key], source: 'replay', neurons: 0 }
+      return { text: REPLAY[`${job}:${cacheKey}`], source: 'replay', neurons: 0 }
     }
     if (this.d.mode !== 'live') return null
 
@@ -44,16 +46,20 @@ export class ModelGate {
     const day = this.d.day()
     if (!(await take(this.d.db, { day, visitor: this.d.visitor, key: this.d.key, neurons: WORST[job], ledger: this.d.ledger, now: now(), ticket }))) {
       await this.trace(job, 0, false, 'over cap')
-      return null
+      const recorded = REPLAY[`${job}:${cacheKey}`]
+      return recorded === undefined ? null : { text: recorded, source: 'replay', neurons: 0 }
     }
-    // Qwen3 thinks aloud before answering unless the last user turn says /no_think.
-    const sent = messages.map((m, i) => (i === messages.length - 1 && m.role === 'user' ? { ...m, content: m.content + ' /no_think' } : m))
     let raw: any
     try {
-      raw = await this.d.ai.run(MODEL_ID, { messages: sent, max_tokens: out, temperature: 0 })
+      raw = await this.d.ai.run(MODEL_ID, {
+        messages, max_tokens: out, temperature: 0,
+        chat_template_kwargs: { enable_thinking: false },
+        ...(schema ? { response_format: { type: 'json_schema', json_schema: schema } } : {}),
+      })
     } catch {
       await this.trace(job, WORST[job], false, 'error')
-      return null
+      const recorded = REPLAY[`${job}:${cacheKey}`]
+      return recorded === undefined ? null : { text: recorded, source: 'replay', neurons: 0 }
     }
     const text = clean(asText(raw?.response ?? raw?.choices?.[0]?.message?.content ?? ''))
     const usage = raw?.usage

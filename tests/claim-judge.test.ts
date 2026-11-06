@@ -27,7 +27,7 @@ describe('claim judge', () => {
     const gate = {
       async ask(_job: string, messages: { content: string }[]) {
         shown = JSON.parse(messages[1].content).calls.map((c: { call_id: number }) => c.call_id)
-        return { text: JSON.stringify({ verdict: 'approve', reason_code: 'DUPLICATE', evidence: '"time":"09:00"', cited_call_ids: [1, 8] }), source: 'live', neurons: 1 }
+        return { text: JSON.stringify({ verdict: 'approve', claim_names: 'DUPLICATE', reason_code: 'DUPLICATE', evidence: '"time":"09:00"', cited_call_ids: [1, 8] }), source: 'live', neurons: 1 }
       },
     }
     const v = await makeClaimJudge(gate as never)('billed twice', calls[7], calls)

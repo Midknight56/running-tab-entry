@@ -16,7 +16,7 @@ async function fixture(state = 'PAID', count = 2) {
     VALUES (?, ?, 'ws1', 'agt_1', 'tab_1', 'convert_time', '{"time":"09:00"}', '{}', 25, 'BILLABLE', ?)`)
     .bind(`call_${seq}`, seq, seq * 1000).run()
   const judge = makeClaimJudge({ ask: async () => ({ text: JSON.stringify({
-    verdict: 'approve', reason_code: 'DUPLICATE', evidence: '09:00', cited_call_ids: Array.from({ length: count }, (_, n) => n + 1),
+    verdict: 'approve', claim_names: 'DUPLICATE', reason_code: 'DUPLICATE', evidence: '09:00', cited_call_ids: Array.from({ length: count }, (_, n) => n + 1),
   }) }) } as never)
   const requests: string[] = []
   const pp = { request: async (_m: string, _p: string, opts: { requestId?: string }) => {
@@ -41,7 +41,7 @@ it.each(['COMPLETED', 'PENDING', 'UNCERTAIN'])('reserves one duplicate charge ac
   const judge = makeClaimJudge({ ask: async () => {
     if (++reads === 2) release()
     await bothRead
-    return { text: JSON.stringify({ verdict: 'approve', reason_code: 'DUPLICATE', evidence: '09:00', cited_call_ids: [1, 2] }) }
+    return { text: JSON.stringify({ verdict: 'approve', claim_names: 'DUPLICATE', reason_code: 'DUPLICATE', evidence: '09:00', cited_call_ids: [1, 2] }) }
   } } as never)
   const requests: { id?: string; body?: any }[] = []
   const pp = { async request(_method: string, _path: string, opts: { requestId?: string; body?: unknown } = {}) {

@@ -112,13 +112,14 @@ describe('claim attack cases', () => {
     await seed()
     const claimed = await db.prepare('SELECT * FROM calls WHERE id = ?').bind('call_2').first<any>()
     const tabCalls = (await db.prepare('SELECT * FROM calls WHERE tab_id = ?').bind('tab_1').all<any>()).results
-    for (const verdict of [
-      { verdict: 'approve', reason_code: 'DUPLICATE', evidence: '09:00', cited_call_ids: [88] },
-      { verdict: 'approve', reason_code: 'OFF_REQUEST', evidence: 'invented evidence', cited_call_ids: [2] },
-      { verdict: 'approve', reason_code: 'OFF_REQUEST', evidence: '09:00', cited_call_ids: [2], amount: 25 },
-    ]) {
+    const verdicts = [
+      { verdict: 'approve', claim_names: 'DUPLICATE', reason_code: 'DUPLICATE', evidence: '09:00', cited_call_ids: [88] },
+      { verdict: 'approve', claim_names: 'OFF_REQUEST', reason_code: 'OFF_REQUEST', evidence: 'invented evidence', cited_call_ids: [2] },
+      { verdict: 'approve', claim_names: 'OFF_REQUEST', reason_code: 'OFF_REQUEST', evidence: '09:00', cited_call_ids: [2], amount: 25 },
+    ]
+    for (const [index, verdict] of verdicts.entries()) {
       const judge = makeClaimJudge({ ask: async () => ({ text: JSON.stringify(verdict) }) } as any)
-      expect(await judge('bad call', claimed, tabCalls)).toBeNull()
+      expect(await judge('bad call', claimed, tabCalls)).toEqual(index === 0 ? { approve: false, reason_code: 'DUPLICATE' } : null)
     }
   })
 

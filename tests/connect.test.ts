@@ -68,7 +68,7 @@ describe('connect keys', () => {
     let runs = 0
     d.env.AI = { run: async (_model: unknown, input: any) => {
       runs++
-      const request = JSON.parse(input.messages.at(-1).content.replace(' /no_think', ''))
+      const request = JSON.parse(input.messages.at(-1).content)
       return { response: JSON.stringify({ call_id: request.call_id, verdict: 'keep', reason_code: '', evidence: '' }), usage: { neurons: 10 } }
     } } as any
     for (let i = 0; i < 8; i++) {

@@ -41,7 +41,7 @@ const tab = () => db.prepare('SELECT captured_cents, refunded_cents FROM tabs').
 beforeEach(() => { db = fakeD1() })
 
 describe('claims and refunds', () => {
-  it.each(['STRUCK', 'PENDING_AUDIT', 'REFUNDED', 'FREE'])('does not refund a duplicate supported only by a %s matching call', async status => {
+  it.each(['STRUCK', 'REFUNDED', 'FREE'])('rejects a duplicate supported only by a %s matching call', async status => {
     await seed()
     await db.prepare("UPDATE calls SET status = ?, price_cents = ? WHERE id = 'call_1'")
       .bind(status === 'FREE' ? 'BILLABLE' : status, status === 'FREE' ? 0 : 25).run()
@@ -50,11 +50,11 @@ describe('claims and refunds', () => {
     await db.prepare('UPDATE tabs SET total_cents = 150, captured_cents = 150').run()
     const d = deps()
     d.judge = makeClaimJudge({ ask: async () => ({ text: JSON.stringify({
-      verdict: 'approve', reason_code: 'DUPLICATE', evidence: '"time":"09:00"', cited_call_ids: [1, 2],
+      verdict: 'approve', claim_names: 'DUPLICATE', reason_code: 'DUPLICATE', evidence: '"time":"09:00"', cited_call_ids: [1, 2],
     }) }) } as never)
     const r = await fileClaim(d, agent, 2, 'billed twice')
     expect(d.pp.calls).toHaveLength(0)
-    expect(r.claim.state).toBe('WAITING_SELLER')
+    expect(r.claim.state).toBe('REJECTED')
     expect((await tab()).refunded_cents).toBe(0)
   })
 

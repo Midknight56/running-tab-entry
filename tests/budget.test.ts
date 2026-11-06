@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { RT_DAILY_NEURONS, VISITOR_DAILY_NEURONS, WORST, take, worstCase } from '../src/ai/budget'
+import { INPUT_CAP, OUTPUT_CAP, MODEL_ID, RT_DAILY_NEURONS, VISITOR_DAILY_NEURONS, WORST, take, worstCase } from '../src/ai/budget'
 import { ModelGate } from '../src/ai/model'
 import { fakeD1, type FakeD1 } from './helpers/d1'
 
@@ -8,11 +8,13 @@ beforeEach(() => { db = fakeD1() })
 
 describe('budget', () => {
   it('writes the worst case of each job from the price table', () => {
-    // 4,625 neurons per million input tokens, 30,475 per million output tokens; 4 characters a token.
-    expect(worstCase(6000, 120)).toBeCloseTo(10.59, 1)
-    expect(WORST.studio_round).toBeCloseTo(66.11, 1)
-    expect(WORST.audit).toBeCloseTo(10.59, 1)
-    expect(WORST.explain_round).toBeCloseTo(15.35, 1)
+    expect(MODEL_ID).toBe('@cf/zai-org/glm-4.7-flash')
+    for (const job of Object.keys(INPUT_CAP) as (keyof typeof INPUT_CAP)[]) {
+      expect(WORST[job]).toBeCloseTo(worstCase(INPUT_CAP[job], OUTPUT_CAP[job]), 8)
+    }
+    expect(WORST.studio_round).toBeCloseTo(78.7, 5)
+    expect(WORST.audit).toBeCloseTo(12.618, 5)
+    expect(WORST.explain_round).toBeCloseTo(18.28, 5)
   })
 
   it('refuses a call past the visitor share before anything runs', async () => {
@@ -56,7 +58,7 @@ describe('model gate', () => {
     const g = new ModelGate({ db, ai: a, mode: 'replay', visitor: 'v', wsId: 'ws1', day: () => '2026-10-25' })
     expect(await g.ask('audit', [{ role: 'user', content: 'hi' }], 120, 'k1')).toBeNull()
     expect(a.seen).toHaveLength(0)
-    await db.prepare("INSERT INTO cache (key, value_json, at) VALUES ('audit:k1', '\"cached text\"', 1)").run()
+    await db.prepare("INSERT INTO cache (key, value_json, at) VALUES ('audit:@cf/zai-org/glm-4.7-flash:none:k1', '\"cached text\"', 1)").run()
     expect(await g.ask('audit', [{ role: 'user', content: 'hi' }], 120, 'k1')).toMatchObject({ text: 'cached text', source: 'cache' })
   })
 
@@ -68,11 +70,11 @@ describe('model gate', () => {
     expect(r1).toMatchObject({ text: '{"verdict":"keep"}', source: 'live' })
     expect(r2).toMatchObject({ source: 'cache' })
     expect(a.seen).toHaveLength(1)
-    expect(JSON.stringify(a.seen[0])).toContain('/no_think')
+    expect(a.seen[0]).toMatchObject({ messages: [{ role: 'system', content: 's' }, { role: 'user', content: 'u' }] })
+    expect(a.seen[0]).toMatchObject({ chat_template_kwargs: { enable_thinking: false } })
     const tr = (await db.prepare("SELECT neurons, cached, model FROM trace WHERE kind = 'model' ORDER BY id").all<any>()).results
-    expect(tr[0]).toMatchObject({ cached: 0, model: '@cf/qwen/qwen3-30b-a3b-fp8' })
-    // 100 tokens in and 20 out: 0.4625 + 0.6095 = 1.07 neurons measured.
-    expect(tr[0].neurons).toBeCloseTo(1.07, 2)
+    expect(tr[0]).toMatchObject({ cached: 0, model: '@cf/zai-org/glm-4.7-flash' })
+    expect(tr[0].neurons).toBeCloseTo(1.282, 2)
     expect(tr[1]).toMatchObject({ cached: 1, neurons: 0 })
   })
 

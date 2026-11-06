@@ -14,7 +14,7 @@ function fakeAi() {
     jobs,
     async run(_model: string, input: any) {
       const system: string = input.messages[0].content
-      const user = JSON.parse(input.messages.at(-1).content.replace(/ \/no_think$/, ''))
+      const user = JSON.parse(input.messages.at(-1).content)
       const reply = (o: unknown) => ({ response: JSON.stringify(o), usage: { prompt_tokens: 400, completion_tokens: 40 } })
       if (system.startsWith('You audit')) {
         jobs.push('audit')
@@ -23,7 +23,7 @@ function fakeAi() {
       }
       if (system.startsWith('You judge')) {
         jobs.push('claim')
-        return reply({ verdict: 'approve', reason_code: 'DUPLICATE', evidence: '"time":"16:00"', cited_call_ids: [23, 24] })
+        return reply({ verdict: 'approve', claim_names: 'DUPLICATE', reason_code: 'DUPLICATE', evidence: '"time":"16:00"', cited_call_ids: [23, 24] })
       }
       if (system.startsWith('You write')) {
         jobs.push('note')

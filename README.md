@@ -99,7 +99,7 @@ http://127.0.0.1:8787 with no model binding; `DEV_FAKE_AI=1` in `.dev.vars` uses
 
 ## AI used in the product
 
-Cloudflare Workers AI, model `@cf/qwen/qwen3-30b-a3b-fp8`. Every model call has a daily cap and a cap per visitor, so
+Cloudflare Workers AI, model `@cf/zai-org/glm-4.7-flash`. Every model call has a daily cap and a cap per visitor, so
 a visitor never causes a paid call.
 
 ## Receipts

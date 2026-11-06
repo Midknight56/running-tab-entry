@@ -49,7 +49,7 @@ beforeEach(async () => {
     return new Response(JSON.stringify({ id: `REF${refunds.length}`, status: 'COMPLETED' }), { status: 201 })
   }))
   env = {
-    DB: db, RT_KV: fakeKV(), AI: { run: async () => ({ response: JSON.stringify({ verdict: 'approve', reason_code: 'NONSENSE', evidence: 'bad answer', cited_call_ids: [2] }) }) } as any,
+    DB: db, RT_KV: fakeKV(), AI: { run: async () => ({ response: JSON.stringify({ verdict: 'approve', claim_names: 'NONSENSE', reason_code: 'NONSENSE', evidence: 'bad answer', cited_call_ids: [2] }) }) } as any,
     ASSETS: { fetch: async () => new Response('desk') } as unknown as Fetcher,
     PAYPAL_BASE: 'https://paypal.example', PAYPAL_CLIENT_ID: 'cid_TEST', PAYPAL_CLIENT_SECRET: 'secret_TEST',
     SESSION_SECRET: 'session secret for tests', AI_MODE: 'live',

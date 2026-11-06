@@ -22,14 +22,34 @@ describe('audit checks', () => {
 describe('claim checks', () => {
   const claimed = { ...call(24, '{"q":"same"}', 3900), duration_ms: 12000 }
   const expects = (otherArgs = claimed.args_json) => ({ claimed, tab_calls: [call(23, otherArgs, 1000), claimed] })
-  const approve = '{"verdict":"approve","reason_code":"DUPLICATE","evidence":"same","cited_call_ids":[23,24]}'
+  const approve = '{"verdict":"approve","claim_names":"DUPLICATE","reason_code":"DUPLICATE","evidence":"same","cited_call_ids":[23,24]}'
+  it('does not approve a fault the claim did not name', () => {
+    expect(checkClaimVerdict(approve.replace('"claim_names":"DUPLICATE"', '"claim_names":"NONE"'), expects())).toEqual({ approve: false })
+  })
+  it('does not approve when the claim names are missing', () => {
+    expect(checkClaimVerdict(approve.replace('"claim_names":"DUPLICATE",', ''), expects())).toEqual({ approve: false })
+  })
   it('approves a duplicate within the time window', () => expect(checkClaimVerdict(approve, expects())).toEqual({ approve: true, reason_code: 'DUPLICATE', evidence: 'same', cited_seqs: [23, 24] }))
   it.each([{ status: 'STRUCK' }, { status: 'PENDING_AUDIT' }, { status: 'REFUNDED' }, { price_cents: 0 }])('drops an ineligible claimed duplicate: %j', change => {
     const invalid = { ...claimed, ...change }
     expect(checkClaimVerdict(approve, { claimed: invalid, tab_calls: [call(23, claimed.args_json), invalid] })).toBeNull()
   })
-  it('drops a duplicate with different arguments', () => expect(checkClaimVerdict(approve, expects('{"q":"different"}'))).toBeNull())
+  it('rejects a duplicate claim when no matching twin exists', () => {
+    const unrelated = [call(21, '{"q":"other"}', 2000), call(22, '{"q":"another"}', 2500)]
+    const text = '{"verdict":"approve","claim_names":"DUPLICATE","reason_code":"DUPLICATE","evidence":"same","cited_call_ids":[21,22]}'
+    expect(checkClaimVerdict(text, { claimed, tab_calls: [...unrelated, claimed] })).toEqual({ approve: false, reason_code: 'DUPLICATE' })
+  })
+  it('leaves a duplicate claim for the seller when its matching call is pending audit', () => {
+    const pendingTwin = { ...call(23, claimed.args_json, 1000), status: 'PENDING_AUDIT' }
+    expect(checkClaimVerdict(approve, { claimed, tab_calls: [pendingTwin, claimed] })).toBeNull()
+  })
+  it('leaves a duplicate claim for the seller when its twin is not cited', () => {
+    const twin = call(23, claimed.args_json, 1000)
+    const other = call(22, '{"q":"other"}', 1200)
+    const text = '{"verdict":"approve","claim_names":"DUPLICATE","reason_code":"DUPLICATE","evidence":"same","cited_call_ids":[22,24]}'
+    expect(checkClaimVerdict(text, { claimed, tab_calls: [other, twin, claimed] })).toBeNull()
+  })
   it('drops a cited seq outside the tab', () => expect(checkClaimVerdict(approve.replace('[23,24]', '[23,99]'), expects())).toBeNull())
-  it('drops LATE when duration is too short', () => expect(checkClaimVerdict('{"verdict":"approve","reason_code":"LATE","evidence":"same","cited_call_ids":[24]}', { ...expects(), claimed: { ...claimed, duration_ms: 3000 } })).toBeNull())
+  it('drops LATE when duration is too short', () => expect(checkClaimVerdict('{"verdict":"approve","claim_names":"LATE","reason_code":"LATE","evidence":"same","cited_call_ids":[24]}', { ...expects(), claimed: { ...claimed, duration_ms: 3000 } })).toBeNull())
   it('returns a minimal rejection', () => expect(checkClaimVerdict('{"verdict":"reject","reason_code":"nonsense"}', expects())).toEqual({ approve: false }))
 })

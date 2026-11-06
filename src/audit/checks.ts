@@ -65,6 +65,8 @@ export function checkClaimVerdict(text: string, x: ClaimExpect): ClaimVerdict | 
     }
     return { approve: false }
   }
+  if (obj.claim_names !== obj.reason_code) return { approve: false }
+  if (obj.reason_code === 'DUPLICATE' && !x.tab_calls.some((c) => c.seq !== x.claimed.seq && c.status === 'BILLABLE' && c.price_cents > 0 && c.tool === x.claimed.tool && c.args_json === x.claimed.args_json && Math.abs(c.created_at - x.claimed.created_at) <= 600000) && !x.tab_calls.some((c) => c.seq !== x.claimed.seq && c.status === 'PENDING_AUDIT' && c.tool === x.claimed.tool && c.args_json === x.claimed.args_json && Math.abs(c.created_at - x.claimed.created_at) <= 600000)) return { approve: false, reason_code: 'DUPLICATE' }
   if (typeof obj.reason_code !== 'string' || !(CLAIM_REASONS as readonly string[]).includes(obj.reason_code) || !Array.isArray(obj.cited_call_ids)) return null
   if (!obj.cited_call_ids.every((n) => Number.isInteger(n) && x.tab_calls.some((c) => c.seq === n))) return null
   if (typeof obj.evidence !== 'string') return null

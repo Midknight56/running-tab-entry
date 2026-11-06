@@ -10,7 +10,7 @@ export const fakeAi: AiBinding = {
     const system: string = input.messages[0].content
     if (/Tools: \[/.test(system)) return studioReply(input)
     let user: any = {}
-    try { user = JSON.parse(String(input.messages.at(-1).content).replace(/ \/no_think$/, '')) } catch { /* words */ }
+    try { user = JSON.parse(String(input.messages.at(-1).content)) } catch { /* words */ }
     const reply = (o: unknown) => ({ response: JSON.stringify(o) })
     if (system.startsWith('You audit')) {
       if (/weather/i.test(String(user.answer))) return reply({ call_id: user.call_id, verdict: 'strike', reason_code: 'OFF_REQUEST', evidence: 'London has mild weather this week' })
@@ -19,7 +19,7 @@ export const fakeAi: AiBinding = {
     if (system.startsWith('You judge')) {
       const claimed = (user.calls ?? []).find((c: any) => c.call_id === user.claimed_call_id)
       const twin = (user.calls ?? []).find((c: any) => c.call_id !== user.claimed_call_id && c.request === claimed?.request)
-      if (claimed && twin) return reply({ verdict: 'approve', reason_code: 'DUPLICATE', evidence: claimed.request.slice(1, 15), cited_call_ids: [twin.call_id, claimed.call_id] })
+      if (claimed && twin) return reply({ verdict: 'approve', claim_names: 'DUPLICATE', reason_code: 'DUPLICATE', evidence: claimed.request.slice(1, 15), cited_call_ids: [twin.call_id, claimed.call_id] })
       return reply({ verdict: 'reject' })
     }
     if (system.startsWith('You write')) return { response: '' }
