@@ -24,7 +24,60 @@ export const FIELDS: Record<string, { category: string[]; number: string[] }> = 
   claims: claimFields,
 }
 
-export interface WidgetSpec { type: WidgetType; title: string; category?: string; value: string; aggregation: (typeof AGGREGATIONS)[number]; split?: string }
+export interface WidgetSpec { type: WidgetType; title: string; scope: string; category?: string; value: string; aggregation: (typeof AGGREGATIONS)[number]; split?: string }
+
+const SOURCE_LABELS: Record<string, string> = {
+  calls: 'All calls',
+  struck: 'Struck calls',
+  billable: 'Billable calls',
+  billed: 'Billed calls, refunded included',
+  refunded_calls: 'Refunded calls',
+  tabs: 'Tabs',
+  claims: 'All claims',
+  refunds: 'Refunded claims',
+}
+
+const SOURCE_SCOPES: Record<string, string> = {
+  calls: 'Counts every call, any status.',
+  struck: 'Counts only calls with status STRUCK.',
+  billable: 'Counts only calls with status BILLABLE.',
+  billed: 'Counts only calls with status BILLABLE or REFUNDED.',
+  refunded_calls: 'Counts only calls with status REFUNDED.',
+  tabs: 'Counts every tab, any state.',
+  claims: 'Counts every claim, any state.',
+  refunds: 'Counts only claims with state REFUNDED.',
+}
+
+const AGG_LABELS: Record<string, string> = {
+  sum: 'Sum',
+  count: 'Count',
+  avg: 'Average',
+  min: 'Lowest',
+  max: 'Highest',
+}
+
+function buildTitleAndScope(source: string, aggregation: string, valueName: string, categoryName?: string, splitName?: string): { title: string; scope: string } {
+  const sourceLabel = SOURCE_LABELS[source] ?? source
+  const isCountOfCall = aggregation === 'count' && valueName === 'call'
+  const aggName = AGG_LABELS[aggregation] ?? aggregation
+  let title: string
+  if (categoryName) {
+    const splitPart = splitName ? ` and ${splitName}` : ''
+    if (isCountOfCall) {
+      title = `${sourceLabel} by ${categoryName}${splitPart}`
+    } else {
+      title = `${aggName} of ${valueName}: ${sourceLabel.toLowerCase()} by ${categoryName}${splitPart}`
+    }
+  } else {
+    if (isCountOfCall) {
+      title = sourceLabel
+    } else {
+      title = `${aggName} of ${valueName}: ${sourceLabel.toLowerCase()}`
+    }
+  }
+  const scope = SOURCE_SCOPES[source] ?? `Counts every row from ${source}.`
+  return { title, scope }
+}
 
 function field(id: unknown): { table: string; name: string } | null {
   if (typeof id !== 'string') return null
@@ -59,7 +112,7 @@ export function checkSpec(text: string): WidgetSpec | typeof FILTER_REFUSAL | nu
   if (filtered && (!value || value.table !== filtered.table)) return FILTER_REFUSAL
   if (!value || !FIELDS[value.table].number.includes(value.name)) return null
   const type = o.type as WidgetType
-  const spec: WidgetSpec = { type, title: String(o.title ?? '').trim().slice(0, 60) || 'New widget', value: `${value.table}.${value.name}`, aggregation: o.aggregation as WidgetSpec['aggregation'] }
+  const spec: WidgetSpec = { type, title: '', scope: '', value: `${value.table}.${value.name}`, aggregation: o.aggregation as WidgetSpec['aggregation'] }
   if (type !== 'value') {
     const cat = field(o.category)
     if (!cat || cat.table !== value.table || !FIELDS[cat.table].category.includes(cat.name)) return null
@@ -67,7 +120,8 @@ export function checkSpec(text: string): WidgetSpec | typeof FILTER_REFUSAL | nu
     if (o.split !== undefined && o.split !== null && o.split !== '') {
       const split = field(o.split)
       if (!split || split.table !== value.table || !FIELDS[split.table].category.includes(split.name)) return null
-      spec.split = `${split.table}.${split.name}`
+      // A split on the category's own field says nothing more and doubles the title ("by agent and agent"): drop it.
+      if (split.name !== cat.name) spec.split = `${split.table}.${split.name}`
     }
   }
   if (filtered) {
@@ -76,6 +130,13 @@ export function checkSpec(text: string): WidgetSpec | typeof FILTER_REFUSAL | nu
     if (spec.category) spec.category = rewrite(spec.category)
     if (spec.split) spec.split = rewrite(spec.split)
   }
+  const finalSource = spec.value.split('.')[0]
+  const valName = spec.value.split('.')[1]
+  const catName = spec.category ? spec.category.split('.')[1] : undefined
+  const splitName = spec.split ? spec.split.split('.')[1] : undefined
+  const { title, scope } = buildTitleAndScope(finalSource, spec.aggregation, valName, catName, splitName)
+  spec.title = title
+  spec.scope = scope
   return spec
 }
 
@@ -95,6 +156,52 @@ export async function askDesk(gate: Pick<ModelGate, 'ask'> | null, question: str
   const reply = gate ? await gate.ask('widget', [{ role: 'system', content: ASK_SYSTEM }, { role: 'user', content: q }], OUTPUT_CAP.widget, await sha256(q.toLowerCase())) : null
   if (!reply) return { ok: false, busy: true, reason: "The desk's assistant has used its share for today. The desk and the demo still work." }
   const spec = checkSpec(reply.text)
-  if (spec && 'ok' in spec) return spec
-  return spec ? { ok: true, spec } : { ok: false, reason: 'I could not turn that into a chart. Try naming what to group by and what to count.' }
+  if (!spec) return { ok: false, reason: 'I could not turn that into a chart. Try naming what to group by and what to count.' }
+  if ('ok' in spec) return spec
+
+  const statusMatches = Array.from(new Set((q.match(/\b(struck|billable|refunded)\b/gi) ?? []).map(w => w.toLowerCase())))
+  if (statusMatches.length === 1) {
+    const status = statusMatches[0]
+    const namesClaims = /\bclaims?\b/i.test(q)
+    const isClaimsRefund = namesClaims && status === 'refunded'
+    const targetSource = isClaimsRefund ? 'refunds' : status === 'struck' ? 'struck' : status === 'billable' ? 'billable' : 'refunded_calls'
+    const unfilteredTable = isClaimsRefund ? 'claims' : 'calls'
+    const splitField = isClaimsRefund ? 'state' : 'status'
+    const FILTERED_SOURCES = new Set(['struck', 'billable', 'billed', 'refunded_calls', 'refunds'])
+    const specSource = spec.value.split('.')[0]
+
+    if (FILTERED_SOURCES.has(specSource) && specSource !== targetSource) {
+      return FILTER_REFUSAL
+    }
+
+    if (specSource === unfilteredTable) {
+      const rewrite = (id: string) => `${targetSource}.${id.split('.')[1]}`
+      spec.value = rewrite(spec.value)
+      if (spec.category) spec.category = rewrite(spec.category)
+      if (spec.split) {
+        if (spec.split.split('.')[1] === splitField) {
+          delete spec.split
+        } else {
+          spec.split = rewrite(spec.split)
+        }
+      }
+      const finalSource = spec.value.split('.')[0]
+      const valName = spec.value.split('.')[1]
+      const catName = spec.category ? spec.category.split('.')[1] : undefined
+      const splitName = spec.split ? spec.split.split('.')[1] : undefined
+      const { title, scope } = buildTitleAndScope(finalSource, spec.aggregation, valName, catName, splitName)
+      spec.title = title
+      spec.scope = scope
+    } else if (specSource === targetSource && spec.split && spec.split.split('.')[1] === splitField) {
+      delete spec.split
+      const finalSource = spec.value.split('.')[0]
+      const valName = spec.value.split('.')[1]
+      const catName = spec.category ? spec.category.split('.')[1] : undefined
+      const { title, scope } = buildTitleAndScope(finalSource, spec.aggregation, valName, catName)
+      spec.title = title
+      spec.scope = scope
+    }
+  }
+
+  return { ok: true, spec }
 }

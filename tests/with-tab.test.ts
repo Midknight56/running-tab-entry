@@ -105,6 +105,81 @@ describe('withTab', () => {
     })
   })
 
+  it('strikes the call by code when validate returns a verdict', async () => {
+    const validate = vi.fn(() => ({ reason_code: 'WRONG', evidence: '16:00 in London' }))
+    const modelAudit = vi.fn(async () => ({ status: 'BILLABLE' as const }))
+    const tool = withTab(echo, { price_cents: 25, audit: 'model', validate })
+    const result = await tool.run({ s: 'hi' }, { ...ctx, tab: { ...ctx.tab, modelAudit } })
+    expect(validate).toHaveBeenCalledOnce()
+    expect(modelAudit).not.toHaveBeenCalled()
+    expect((result as any)._meta['running-tab/call']).toMatchObject({ status: 'STRUCK', reason_code: 'WRONG', tab_total_cents: 0 })
+    expect(await db.prepare('SELECT status, reason_code, judged_by, evidence FROM calls').first()).toEqual({
+      status: 'STRUCK', reason_code: 'WRONG', judged_by: 'code', evidence: '16:00 in London',
+    })
+  })
+
+  it('records PENDING_AUDIT and unbilled when validate returns HOLD', async () => {
+    const validate = vi.fn(() => 'HOLD' as const)
+    const modelAudit = vi.fn(async () => ({ status: 'BILLABLE' as const }))
+    const tool = withTab(echo, { price_cents: 25, audit: 'model', validate })
+    const result = await tool.run({ s: 'hi' }, { ...ctx, tab: { ...ctx.tab, modelAudit } })
+    expect(validate).toHaveBeenCalledOnce()
+    expect(modelAudit).not.toHaveBeenCalled()
+    expect((result as any)._meta['running-tab/call'].status).toBe('PENDING_AUDIT')
+    expect(await db.prepare('SELECT status, judged_by FROM calls').first()).toMatchObject({ status: 'PENDING_AUDIT' })
+    expect(await db.prepare('SELECT total_cents FROM tabs').first('total_cents')).toBe(0)
+  })
+
+  it('records PENDING_AUDIT and unbilled when validate throws an error', async () => {
+    const validate = vi.fn(() => { throw new Error('Validator crashed') })
+    const modelAudit = vi.fn(async () => ({ status: 'BILLABLE' as const }))
+    const tool = withTab(echo, { price_cents: 25, audit: 'model', validate })
+    const result = await tool.run({ s: 'hi' }, { ...ctx, tab: { ...ctx.tab, modelAudit } })
+    expect(validate).toHaveBeenCalledOnce()
+    expect(modelAudit).not.toHaveBeenCalled()
+    expect((result as any)._meta['running-tab/call'].status).toBe('PENDING_AUDIT')
+    expect(await db.prepare('SELECT status FROM calls').first('status')).toBe('PENDING_AUDIT')
+    expect(await db.prepare('SELECT total_cents FROM tabs').first('total_cents')).toBe(0)
+  })
+
+  it('holds the call when validate cannot read the answer and the model would bill it', async () => {
+    const validate = vi.fn(() => 'UNCHECKED' as const)
+    const modelAudit = vi.fn(async () => ({ status: 'BILLABLE' as const, judged_by: 'model' as const }))
+    const tool = withTab(echo, { price_cents: 25, audit: 'model', validate })
+    const result = await tool.run({ s: 'hi' }, { ...ctx, tab: { ...ctx.tab, modelAudit } })
+    expect(modelAudit).toHaveBeenCalledOnce()
+    expect((result as any)._meta['running-tab/call']).toMatchObject({ status: 'PENDING_AUDIT', tab_total_cents: 0 })
+    expect(await db.prepare('SELECT status FROM calls').first('status')).toBe('PENDING_AUDIT')
+    expect(await db.prepare('SELECT total_cents FROM tabs').first('total_cents')).toBe(0)
+  })
+
+  it('still strikes the call when validate cannot read the answer and the model strikes it', async () => {
+    const validate = vi.fn(() => 'UNCHECKED' as const)
+    const modelAudit = vi.fn(async () => ({ status: 'STRUCK' as const, reason_code: 'OFF_REQUEST', evidence: 'hi', judged_by: 'model' as const }))
+    const tool = withTab(echo, { price_cents: 25, audit: 'model', validate })
+    const result = await tool.run({ s: 'hi' }, { ...ctx, tab: { ...ctx.tab, modelAudit } })
+    expect((result as any)._meta['running-tab/call']).toMatchObject({ status: 'STRUCK', reason_code: 'OFF_REQUEST', tab_total_cents: 0 })
+    expect(await db.prepare('SELECT status, judged_by FROM calls').first()).toMatchObject({ status: 'STRUCK', judged_by: 'model' })
+  })
+
+  it('holds the call when validate cannot read the answer and no model review is set', async () => {
+    const validate = vi.fn(() => 'UNCHECKED' as const)
+    const tool = withTab(echo, { price_cents: 25, validate })
+    const result = await tool.run({ s: 'hi' }, ctx)
+    expect((result as any)._meta['running-tab/call']).toMatchObject({ status: 'PENDING_AUDIT', tab_total_cents: 0 })
+  })
+
+  it('passes on to model audit when validate returns null', async () => {
+    const validate = vi.fn(() => null)
+    const modelAudit = vi.fn(async () => ({ status: 'BILLABLE' as const, judged_by: 'model' as const }))
+    const tool = withTab(echo, { price_cents: 25, audit: 'model', validate })
+    const result = await tool.run({ s: 'hi' }, { ...ctx, tab: { ...ctx.tab, modelAudit } })
+    expect(validate).toHaveBeenCalledOnce()
+    expect(modelAudit).toHaveBeenCalledOnce()
+    expect((result as any)._meta['running-tab/call']).toMatchObject({ status: 'BILLABLE', tab_total_cents: 25 })
+    expect(await db.prepare('SELECT status, judged_by FROM calls').first()).toMatchObject({ status: 'BILLABLE', judged_by: 'model' })
+  })
+
   it.each(['empty', 'error', 'shape', 'throw'] as const)('keeps existing code rules before requires for $0', async (fail) => {
     const requires = vi.fn(() => 'A required part is missing.')
     const modelAudit = vi.fn(async () => ({ status: 'BILLABLE' as const }))

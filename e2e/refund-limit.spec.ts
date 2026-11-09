@@ -6,7 +6,7 @@ test('past one fifth of the capture a refund waits for the seller, who can relea
   const addr = await asVisitor(page)
   await setMock(page, { capture: 'ok' })
   await runToDue(page)
-  await page.getByRole('button', { name: 'Pay with a test card' }).click()
+  await page.getByRole('button', { name: 'Pay by card' }).click()
   await expect(page.locator('.rt-meter-row').first()).toHaveAttribute('data-state', 'PAID', { timeout: 15_000 })
 
   const session = await page.request.post('/api/session', { headers: { 'CF-Connecting-IP': addr } })

@@ -4,6 +4,7 @@ import { TabMeter } from '../widgets/TabMeter'
 import { StruckLedger } from '../widgets/StruckLedger'
 import { MoneyFlow } from '../widgets/MoneyFlow'
 import { useDesk } from '../store'
+import { deskReceipt } from '../selection'
 
 function TabMeterWidget() {
   const d = useDesk()
@@ -11,11 +12,11 @@ function TabMeterWidget() {
 }
 function StruckLedgerWidget() {
   const d = useDesk()
-  return <div className="rt-widget rt-scroll"><StruckLedger agents={d.agents} calls={d.calls} claims={d.claims} /></div>
+  return <div className="rt-widget rt-scroll"><StruckLedger agents={d.agents} calls={d.calls} claims={d.claims} tabs={d.tabs} /></div>
 }
 function MoneyFlowWidget() {
   const d = useDesk()
-  return <div className="rt-widget"><MoneyFlow money={d.money} /></div>
+  return <div className="rt-widget rt-widget-money"><MoneyFlow money={d.money} receipt={deskReceipt(d)} /></div>
 }
 
 const form = (p: any) => p.createDefaults({ dataMappingItems: [] })

@@ -15,7 +15,7 @@ function ids(row: TraceRow): string {
 
 const time = (t: number) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' })
 
-function requestLine(tool: string, args: Record<string, unknown>): string {
+export function requestLine(tool: string, args: Record<string, unknown>): string {
   const parts = Object.entries(args).map(([key, value]) => `${key} ${typeof value === 'object' ? JSON.stringify(value) : String(value)}`)
   let line = ''
   for (const part of parts) {
@@ -34,7 +34,7 @@ export function Panel({ trace, events }: { trace: TraceRow[]; events: EventRow[]
     ...events.map((e) => ({ key: 'e' + e.id, at: e.received_at, kind: 'webhook' as const, row: e })),
   ].sort((a, b) => b.at - a.at).slice(0, 80)
   return (
-    <details className="rt-log">
+    <details className="rt-log" open>
     <summary>PayPal and model log</summary>
     <ol className="rt-panel" aria-label="Behind the scenes" aria-live="polite">
       {rows.map((r) => {
@@ -143,6 +143,7 @@ export function TryPanel({ agents, calls, tabs, triesLeft: initialTries, claimPi
           {result.reason_code && <p>Reason code: <b>{result.reason_code}</b></p>}
           {result.evidence && <blockquote>“{result.evidence}”</blockquote>}
           {result.refund_id && <p>Refund id: <code>{result.refund_id}</code></p>}
+          {result.state === 'REFUNDING' && <p>Refund pending at PayPal.</p>}
           {result.message && <p>{result.message}</p>}
         </article>
       )}

@@ -24,11 +24,13 @@ export const initialReport = {
       },
     },
     widgetLayout: {
-      meter: { xTrack: 0, yTrack: 0, xSpan: 10, ySpan: 10 },
-      flow: { xTrack: 10, yTrack: 0, xSpan: 14, ySpan: 10 },
-      reasons: { xTrack: 10, yTrack: 10, xSpan: 14, ySpan: 10 },
-      struck: { xTrack: 0, yTrack: 10, xSpan: 10, ySpan: 26 },
-      calls: { xTrack: 10, yTrack: 20, xSpan: 14, ySpan: 16 },
+      // The money widget gets 26 rows: the receipt, the current tab and the session money need about 290 px at 1440
+      // wide, and 16 rows (204 px) cut the session money off (e2e/money-widget.spec.ts).
+      meter: { xTrack: 0, yTrack: 0, xSpan: 10, ySpan: 16 },
+      flow: { xTrack: 10, yTrack: 0, xSpan: 14, ySpan: 26 },
+      reasons: { xTrack: 10, yTrack: 26, xSpan: 14, ySpan: 10 },
+      struck: { xTrack: 0, yTrack: 16, xSpan: 10, ySpan: 36 },
+      calls: { xTrack: 10, yTrack: 36, xSpan: 14, ySpan: 16 },
     },
   }],
 }

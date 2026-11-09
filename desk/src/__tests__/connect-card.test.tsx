@@ -11,14 +11,40 @@ it('shows the key expiry configuration and command with copy buttons', async () 
   vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ agent_id: 'judge', name: 'Your agent', key: 'rt_agent_test', expires_at: expires, mcp_url: 'https://rt.example/mcp' }) })))
   render(<ConnectCard session={session} agents={agents} tabs={[]} />)
   fireEvent.click(screen.getByRole('button', { name: 'Get a key' }))
-  expect(await screen.findByText('rt_agent_test')).toBeTruthy()
+  expect(await screen.findByText('rt_agent_••••')).toBeTruthy()
   expect(screen.getByText(`Expires ${new Date(expires).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`)).toBeTruthy()
-  expect(screen.getByText(JSON.stringify({ mcpServers: { 'running-tab': { url: 'https://rt.example/mcp', headers: { Authorization: 'Bearer rt_agent_test' } } } }))).toBeTruthy()
-  expect(screen.getByText('node client/agent.mjs --url https://rt.example/mcp --key rt_agent_test --wait')).toBeTruthy()
+  expect(screen.getByText(JSON.stringify({ mcpServers: { 'running-tab': { url: 'https://rt.example/mcp', headers: { Authorization: 'Bearer rt_agent_••••' } } } }))).toBeTruthy()
+  expect(screen.getByText('node client/agent.mjs --url https://rt.example/mcp --key rt_agent_•••• --wait')).toBeTruthy()
   expect(screen.getByRole('region', { name: 'Connect' }).querySelector('p')?.textContent).toMatch(/^MCP endpoint/)
-  expect(screen.getByRole('region', { name: 'Connect' }).querySelector('pre')?.textContent).toBe('rt_agent_test')
+  expect(screen.getByRole('region', { name: 'Connect' }).querySelector('pre')?.textContent).toBe('rt_agent_••••')
   for (const label of ['Key', 'Client config', 'Command']) expect(screen.getByRole('button', { name: `Copy ${label}` })).toBeTruthy()
   expect(screen.getByText('Demo agents')).toBeTruthy()
+})
+it('never shows a key on screen, and the copy buttons still copy the real values', async () => {
+  const full = 'rt_agent_FULLsecretValue123'
+  const demoKey = 'rt_agent_DEMOsecretValue456'
+  const writeText = vi.fn(async (_text: string) => {})
+  vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } })
+  vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ agent_id: 'judge', name: 'Your agent', key: full, expires_at: Date.now() + 7200000, mcp_url: 'https://rt.example/mcp' }) })))
+  render(<ConnectCard session={{ ws_id: 'ws', agents: [{ id: 'demo', name: 'Scheduler bot', key: demoKey }] }} agents={agents} tabs={[]} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Get a key' }))
+  await screen.findByRole('button', { name: 'Copy Command' })
+  const shown = document.body.textContent ?? ''
+  expect(shown).not.toContain(full)
+  expect(shown).not.toContain('FULLsecret')
+  expect(shown).not.toContain(demoKey)
+  expect(shown).not.toContain('DEMOsecret')
+  fireEvent.click(screen.getByRole('button', { name: 'Copy Key' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Copy Client config' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Copy Command' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Copy Scheduler bot key' }))
+  await vi.waitFor(() => expect(writeText).toHaveBeenCalledTimes(4))
+  expect(writeText.mock.calls.map(c => c[0])).toEqual([
+    full,
+    JSON.stringify({ mcpServers: { 'running-tab': { url: 'https://rt.example/mcp', headers: { Authorization: `Bearer ${full}` } } } }),
+    `node client/agent.mjs --url https://rt.example/mcp --key ${full} --wait`,
+    demoKey,
+  ])
 })
 it('shows the refusal text', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, json: async () => ({ error: 'Two agent keys per demo desk. Start a new desk tomorrow.' }) })))
@@ -33,10 +59,10 @@ it('shows payment controls only for the connected agents due tabs', async () => 
   const { rerender } = render(<ConnectCard session={session} agents={agents} tabs={tabs} />)
   expect(screen.getByRole('link', { name: 'Pay $5.15 with PayPal' }).getAttribute('href')).toBe('/pay/tab_judge')
   expect(screen.queryByText('Pay $6.00 with PayPal')).toBeNull()
-  fireEvent.click(screen.getByRole('button', { name: 'Pay with a test card' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Pay by card' }))
   expect(fetch.mock.calls[0][0]).toBe('/api/sandbox/card-pay/tab_judge')
   rerender(<ConnectCard session={session} agents={agents} tabs={tabs.slice(1)} />)
-  expect(screen.queryByRole('button', { name: 'Pay with a test card' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Pay by card' })).toBeNull()
 })
 
 it.each([
@@ -47,7 +73,7 @@ it.each([
   vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, json: async () => body })))
   const tabs = [{ id: 'tab_judge', agent_id: 'judge', state: 'DUE', total_cents: 515 }] as Tab[]
   render(<ConnectCard session={session} agents={agents} tabs={tabs} />)
-  fireEvent.click(screen.getByRole('button', { name: 'Pay with a test card' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Pay by card' }))
   expect((await screen.findByRole('alert')).textContent).toBe(message)
 })
 

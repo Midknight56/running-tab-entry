@@ -1,9 +1,11 @@
-import { describe, expect, it } from 'vitest'
-import { render } from '@testing-library/react'
+import { afterEach, describe, expect, it } from 'vitest'
+import { cleanup, render } from '@testing-library/react'
 import { TabMeter } from '../widgets/TabMeter'
 import { StruckLedger } from '../widgets/StruckLedger'
 import { MoneyFlow } from '../widgets/MoneyFlow'
 import type { Call, Claim, Tab } from '../types'
+
+afterEach(cleanup)
 
 const agents = [{ id: 'a1', name: 'Scheduler bot', created_at: 1 }, { id: 'a2', name: 'Travel desk agent', created_at: 1 }]
 const tab = (o: Partial<Tab>): Tab => ({ id: 't', agent_id: 'a1', state: 'OPEN', total_cents: 0, threshold_cents: 500, order_id: null, capture_id: null, captured_cents: 0, refunded_cents: 0, note: null, created_at: 1, due_at: null, paid_at: null, ...o })
@@ -47,35 +49,55 @@ describe('struck ledger', () => {
     expect(rows[1].textContent).toContain('Auditor')
     expect(rows[2].textContent).toContain('Empty answer')
   })
+
+  it('labels WRONG as Wrong time in the desk', () => {
+    const calls = [call({ id: 'c12', seq: 12, status: 'STRUCK', reason_code: 'WRONG', judged_by: 'code', price_cents: 25, evidence: '16:00 in London' })]
+    const { container } = render(<StruckLedger agents={agents} calls={calls} claims={[]} />)
+    const row = container.querySelector('.rt-ledger-row')!
+    expect(row.getAttribute('data-reason')).toBe('WRONG')
+    expect(row.querySelector('.rt-pill-reason')?.textContent).toBe('Wrong time')
+  })
 })
 
 describe('money flow', () => {
-  it('shows the plain meter, Running Tab charge and reconciled gap parts', () => {
+  it('shows the three headings and net paid on receipt, current tab total, and never after refunds', () => {
+    const receipt = { tab_id: 't1', agent_id: 'a1', metered_cents: 550, struck_cents: 35, captured_cents: 515, refunded_cents: 25, refund_pending_cents: 0, net_cents: 490 }
+    const open_tab = { tab_id: 't2', agent_id: 'a1', state: 'OPEN' as const, total_cents: 25, calls: 1 }
+    const session = { metered_cents: 575, kept_or_billable_cents: 515, struck_cents: 35, refunded_cents: 25, pending_audit_cents: 0 }
+    const money = { captured_cents: 515, refunded_cents: 25, struck_cents: 35, pending_cents: 0, net_cents: 490, plain_meter_cents: 575, kept_cents: 515, kept_out_cents: 60 }
+    const { getByRole, getByTestId, container } = render(
+      <MoneyFlow money={money} receipt={receipt} open_tab={open_tab} session={session} />
+    )
+    expect(getByRole('heading', { name: 'Paid receipt' })).toBeTruthy()
+    expect(getByRole('heading', { name: 'Current tab' })).toBeTruthy()
+    expect(getByRole('heading', { name: 'Session money' })).toBeTruthy()
+    expect(getByTestId('receipt-net').textContent).toBe('Net paid$4.90')
+    expect(getByTestId('current-tab').textContent).toContain('$0.25')
+    expect(container.textContent).not.toContain('after refunds')
+    expect(getByTestId('session-money').textContent).toBe('This session metered $5.75. $5.15 is kept or still billable: $0.35 was struck and $0.25 refunded.')
+  })
+
+  it('shows the plain meter, Running Tab charge and session sentence', () => {
     const { getByTestId, getByText } = render(<MoneyFlow money={{ captured_cents: 515, refunded_cents: 25, struck_cents: 55, pending_cents: 0, net_cents: 490, plain_meter_cents: 570, kept_cents: 490, kept_out_cents: 80 }} />)
-    expect(getByText('A plain meter bills $5.70. Running Tab charges $4.90 after refunds. The $0.80 gap: $0.55 struck, $0.25 refunded.')).toBeTruthy()
+    expect(getByText('This session metered $5.70. $4.90 is kept or still billable: $0.55 was struck and $0.25 refunded.')).toBeTruthy()
     expect([...document.querySelectorAll('[data-testid^="flow-bar-"]')].map((e) => e.getAttribute('data-testid'))).toEqual(['flow-bar-plain', 'flow-bar-kept'])
     expect(getByTestId('flow-bar-plain').textContent).toContain('Plain meter')
     expect(getByTestId('flow-bar-kept').textContent).toContain('Running Tab')
   })
 
-  it('shows all nonzero parts when they add up', () => {
+  it('shows all nonzero parts when they are present', () => {
     const { container } = render(<MoneyFlow money={{ captured_cents: 0, refunded_cents: 10, struck_cents: 20, pending_cents: 30, net_cents: 0, plain_meter_cents: 100, kept_cents: 40, kept_out_cents: 60 }} />)
-    expect(container.querySelector('[data-testid="flow-line"]')?.textContent).toContain('The $0.60 gap: $0.20 struck, $0.10 refunded, $0.30 waiting on audit.')
+    expect(container.querySelector('[data-testid="flow-line"]')?.textContent).toBe('This session metered $1.00. $0.40 is kept or still billable: $0.20 was struck, $0.10 refunded, and $0.30 waiting on audit.')
   })
 
   it('leaves out parts that are zero', () => {
     const { container } = render(<MoneyFlow money={{ captured_cents: 100, refunded_cents: 0, struck_cents: 80, pending_cents: 0, net_cents: 100, plain_meter_cents: 180, kept_cents: 100, kept_out_cents: 80 }} />)
-    expect(container.querySelector('[data-testid="flow-line"]')?.textContent).toContain('The $0.80 gap: $0.80 struck.')
+    expect(container.querySelector('[data-testid="flow-line"]')?.textContent).toBe('This session metered $1.80. $1.00 is kept or still billable: $0.80 was struck.')
   })
 
-  it('omits parts when they do not add up to the gap', () => {
-    const { container } = render(<MoneyFlow money={{ captured_cents: 490, refunded_cents: 25, struck_cents: 35, pending_cents: 5, net_cents: 465, plain_meter_cents: 570, kept_cents: 490, kept_out_cents: 80 }} />)
-    expect(container.querySelector('[data-testid="flow-line"]')?.textContent).toBe('A plain meter bills $5.70. Running Tab charges $4.90 after refunds. The $0.80 gap.')
-  })
-
-  it('ends after after refunds when the gap is zero', () => {
-    const { container } = render(<MoneyFlow money={{ captured_cents: 490, refunded_cents: 25, struck_cents: 0, pending_cents: 0, net_cents: 465, plain_meter_cents: 490, kept_cents: 490, kept_out_cents: 0 }} />)
-    expect(container.querySelector('[data-testid="flow-line"]')?.textContent).toBe('A plain meter bills $4.90. Running Tab charges $4.90 after refunds.')
+  it('ends when struck and refunded are zero', () => {
+    const { container } = render(<MoneyFlow money={{ captured_cents: 490, refunded_cents: 0, struck_cents: 0, pending_cents: 0, net_cents: 490, plain_meter_cents: 490, kept_cents: 490, kept_out_cents: 0 }} />)
+    expect(container.querySelector('[data-testid="flow-line"]')?.textContent).toBe('This session metered $4.90. $4.90 is kept or still billable.')
   })
 })
 

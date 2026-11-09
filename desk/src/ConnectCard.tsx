@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { connectAgent, payWithCard, type ConnectKey, type Session } from './data'
 import { usd, type Agent, type Tab } from './types'
 
+export const KEY_MASK = 'rt_agent_\u2022\u2022\u2022\u2022'
+
 export function ConnectCard({ session, agents, tabs }: { session: Session; agents: Agent[]; tabs: Tab[] }) {
   const [monthly, setMonthly] = useState('')
   const [perCall, setPerCall] = useState('')
@@ -26,6 +28,7 @@ export function ConnectCard({ session, agents, tabs }: { session: Session; agent
     } catch { setError('Payment did not go through. The tab is still open.') }
     setBusy(false)
   }
+  const maskedConfig = key ? JSON.stringify({ mcpServers: { 'running-tab': { url: key.mcp_url, headers: { Authorization: `Bearer ${KEY_MASK}` } } } }) : ''
   const config = key ? JSON.stringify({ mcpServers: { 'running-tab': { url: key.mcp_url, headers: { Authorization: `Bearer ${key.key}` } } } }) : ''
   return <section className="rt-connect" aria-label="Connect">
     <h2 className="rt-connect-title">Connect an agent</h2>
@@ -37,26 +40,35 @@ export function ConnectCard({ session, agents, tabs }: { session: Session; agent
       <button className="rt-btn" disabled={busy} onClick={getKey}>Get a key</button>
     </div>
     {key && <>
-      <CopyBlock label="Key" text={key.key} />
+      <CopyBlock label="Key" text={KEY_MASK} copyText={key.key} />
       <p className="rt-dim">Expires {new Date(key.expires_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
-      <CopyBlock label="Client config" text={config} />
-      <CopyBlock label="Command" text={`node client/agent.mjs --url ${key.mcp_url} --key ${key.key} --wait`} />
+      <CopyBlock label="Client config" text={maskedConfig} copyText={config} />
+      <CopyBlock label="Command" text={`node client/agent.mjs --url ${key.mcp_url} --key ${KEY_MASK} --wait`} copyText={`node client/agent.mjs --url ${key.mcp_url} --key ${key.key} --wait`} />
     </>}
     {due.map(t => <div className="rt-connect-pay" key={t.id}>
       <a className="rt-btn rt-primary" href={`/pay/${t.id}`}>Pay {usd(t.total_cents)} with PayPal</a>
-      <button className="rt-btn" disabled={busy} onClick={() => pay(t.id)}>Pay with a test card</button>
+      <button className="rt-btn" disabled={busy} onClick={() => pay(t.id)}>Pay by card</button>
     </div>)}
     {error && <p role="alert">{error}</p>}
     <details><summary>Demo agents</summary>
-      {session.agents.map(a => <p key={a.id}>{a.name} <code>Authorization: Bearer {a.key}</code></p>)}
+      {session.agents.map(a => <DemoAgentRow key={a.id} agent={a} />)}
     </details>
   </section>
 }
 
-export function CopyBlock({ label, text }: { label: string; text: string }) {
+function DemoAgentRow({ agent }: { agent: { id: string; name: string; key: string } }) {
   const [error, setError] = useState('')
   async function copy() {
-    try { await navigator.clipboard.writeText(text); setError('') }
+    try { await navigator.clipboard.writeText(agent.key); setError('') }
+    catch { setError('Could not copy. Select the text to copy it.') }
+  }
+  return <p>{agent.name} <code>Authorization: Bearer {KEY_MASK}</code> <button className="rt-btn" aria-label={`Copy ${agent.name} key`} onClick={copy}>Copy</button>{error && <span role="status">{error}</span>}</p>
+}
+
+export function CopyBlock({ label, text, copyText }: { label: string; text: string; copyText?: string }) {
+  const [error, setError] = useState('')
+  async function copy() {
+    try { await navigator.clipboard.writeText(copyText ?? text); setError('') }
     catch { setError('Could not copy. Select the text to copy it.') }
   }
   return <div className="rt-copy"><span className="rt-copy-label">{label}</span><div className="rt-connect-block"><pre>{text}</pre><button className="rt-btn" aria-label={`Copy ${label}`} onClick={copy}>Copy</button>{error && <span role="status">{error}</span>}</div></div>

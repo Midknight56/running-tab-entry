@@ -77,6 +77,10 @@ it.each([true, false])('places actions in the summary and draws one claim panel 
     expect([...view.container.querySelectorAll('.rt-phone > section')].map(section => section.querySelector('h2')?.textContent)).toEqual(['Tabs', 'Money', 'Struck and refunded'])
     expect(view.container.querySelector('.rt-side .rt-try')).toBeNull()
   } else expect(view.container.querySelector('.rt-side .rt-try')).toBeTruthy()
+  // Payment details is folded on a first visit; inside it the PayPal and model log is open, so one click shows it.
+  const payment = screen.getByTestId('payment-details') as HTMLDetailsElement
+  expect(payment.open).toBe(false)
+  expect((payment.querySelector('details.rt-log') as HTMLDetailsElement).open).toBe(true)
 })
 
 it.each([
@@ -92,6 +96,6 @@ it.each([
     ? response(body, 429)
     : String(input) === '/api/session' ? response({ ws_id: 'demo', agents: [] }) : response(data)))
   render(<App license={null} />)
-  fireEvent.click(await screen.findByRole('button', { name: 'Pay with a test card' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Pay by card' }))
   expect((await screen.findByRole('alert')).textContent).toBe(message)
 })

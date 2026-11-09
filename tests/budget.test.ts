@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { INPUT_CAP, OUTPUT_CAP, MODEL_ID, RT_DAILY_NEURONS, VISITOR_DAILY_NEURONS, WORST, take, worstCase } from '../src/ai/budget'
-import { ModelGate } from '../src/ai/model'
+import { MODEL_ID, RT_DAILY_NEURONS, VISITOR_DAILY_NEURONS, WORST, take, worstCase } from '../src/ai/budget'
+import { ModelGate, sha256 } from '../src/ai/model'
+import { REPLAY } from '../src/ai/replay'
 import { fakeD1, type FakeD1 } from './helpers/d1'
 
 let db: FakeD1
@@ -9,12 +10,17 @@ beforeEach(() => { db = fakeD1() })
 describe('budget', () => {
   it('writes the worst case of each job from the price table', () => {
     expect(MODEL_ID).toBe('@cf/zai-org/glm-4.7-flash')
-    for (const job of Object.keys(INPUT_CAP) as (keyof typeof INPUT_CAP)[]) {
-      expect(WORST[job]).toBeCloseTo(worstCase(INPUT_CAP[job], OUTPUT_CAP[job]), 8)
-    }
-    expect(WORST.studio_round).toBeCloseTo(78.7, 5)
-    expect(WORST.audit).toBeCloseTo(12.618, 5)
-    expect(WORST.explain_round).toBeCloseTo(18.28, 5)
+    // 5,500 neurons per million input tokens, 36,400 per million output tokens; 4 characters a token.
+    expect(worstCase(6000, 120)).toBeCloseTo(12.618, 3)
+    expect(WORST.studio_round).toBeCloseTo(78.700, 3)
+    expect(WORST.audit).toBeCloseTo(12.618, 3)
+    expect(WORST.claim).toBeCloseTo(16.824, 3)
+    expect(WORST.note).toBeCloseTo(13.710, 3)
+    expect(WORST.explain_round).toBeCloseTo(18.280, 3)
+    expect(WORST.widget).toBeCloseTo(9.585, 3)
+    const demo = 6 * WORST.audit + WORST.claim + WORST.note + 3 * WORST.explain_round
+    expect(demo).toBeCloseTo(161.082, 3)
+    expect(Math.floor(1500 / demo)).toBe(9)
   })
 
   it('refuses a call past the visitor share before anything runs', async () => {
@@ -58,7 +64,7 @@ describe('model gate', () => {
     const g = new ModelGate({ db, ai: a, mode: 'replay', visitor: 'v', wsId: 'ws1', day: () => '2026-10-25' })
     expect(await g.ask('audit', [{ role: 'user', content: 'hi' }], 120, 'k1')).toBeNull()
     expect(a.seen).toHaveLength(0)
-    await db.prepare("INSERT INTO cache (key, value_json, at) VALUES ('audit:@cf/zai-org/glm-4.7-flash:none:k1', '\"cached text\"', 1)").run()
+    await db.prepare('INSERT INTO cache (key, value_json, at) VALUES (?, ?, ?)').bind(`audit:${MODEL_ID}:none:k1`, '"cached text"', 1).run()
     expect(await g.ask('audit', [{ role: 'user', content: 'hi' }], 120, 'k1')).toMatchObject({ text: 'cached text', source: 'cache' })
   })
 
@@ -70,12 +76,67 @@ describe('model gate', () => {
     expect(r1).toMatchObject({ text: '{"verdict":"keep"}', source: 'live' })
     expect(r2).toMatchObject({ source: 'cache' })
     expect(a.seen).toHaveLength(1)
-    expect(a.seen[0]).toMatchObject({ messages: [{ role: 'system', content: 's' }, { role: 'user', content: 'u' }] })
-    expect(a.seen[0]).toMatchObject({ chat_template_kwargs: { enable_thinking: false } })
+    expect((a.seen[0] as any).chat_template_kwargs).toEqual({ enable_thinking: false })
+    expect((a.seen[0] as any).messages[1].content).toBe('u')
     const tr = (await db.prepare("SELECT neurons, cached, model FROM trace WHERE kind = 'model' ORDER BY id").all<any>()).results
-    expect(tr[0]).toMatchObject({ cached: 0, model: '@cf/zai-org/glm-4.7-flash' })
-    expect(tr[0].neurons).toBeCloseTo(1.282, 2)
+    expect(tr[0]).toMatchObject({ cached: 0, model: MODEL_ID })
+    expect(tr[0].neurons).toBeCloseTo(1.28, 2)
     expect(tr[1]).toMatchObject({ cached: 1, neurons: 0 })
+  })
+
+  it('sends a JSON schema only when supplied', async () => {
+    const schema = { type: 'object', properties: { verdict: { type: 'string' } } }
+    const a = ai('{}')
+    const g = new ModelGate({ db, ai: a, mode: 'live', visitor: 'v', wsId: 'ws1', day: () => '2026-10-25' })
+    await g.ask('audit', [{ role: 'user', content: 'with schema' }], 120, 'schema', schema)
+    await g.ask('audit', [{ role: 'user', content: 'without schema' }], 120, 'no-schema')
+    expect((a.seen[0] as any).response_format).toEqual({ type: 'json_schema', json_schema: schema })
+    expect((a.seen[1] as any)).not.toHaveProperty('response_format')
+  })
+
+  it('live mode calls the model before using a recorded fallback', async () => {
+    REPLAY['audit:k-replay'] = 'recorded'
+    const a = ai('live answer')
+    const g = new ModelGate({ db, ai: a, mode: 'live', visitor: 'v', wsId: 'ws1', day: () => '2026-10-25' })
+    expect(await g.ask('audit', [{ role: 'user', content: 'u' }], 120, 'k-replay')).toMatchObject({ text: 'live answer', source: 'live' })
+    expect(a.seen).toHaveLength(1)
+    delete REPLAY['audit:k-replay']
+  })
+
+  it('uses recorded answers in replay mode and when a live call is over cap', async () => {
+    REPLAY['audit:k-replay'] = 'recorded'
+    const a = ai('live answer')
+    const replayGate = new ModelGate({ db, ai: a, mode: 'replay', visitor: 'v', wsId: 'ws1', day: () => '2026-10-25' })
+    expect(await replayGate.ask('audit', [{ role: 'user', content: 'u' }], 120, 'k-replay')).toMatchObject({ text: 'recorded', source: 'replay' })
+    await db.prepare("INSERT INTO counters (key, n) VALUES ('neurons:2026-10-25', ?)").bind(RT_DAILY_NEURONS).run()
+    const liveGate = new ModelGate({ db, ai: a, mode: 'live', visitor: 'v', wsId: 'ws1', day: () => '2026-10-25' })
+    expect(await liveGate.ask('audit', [{ role: 'user', content: 'u' }], 120, 'k-replay')).toMatchObject({ text: 'recorded', source: 'replay' })
+    expect(a.seen).toHaveLength(0)
+    delete REPLAY['audit:k-replay']
+  })
+
+  it('uses a recorded answer when the live model call throws', async () => {
+    REPLAY['audit:k-error'] = 'recorded after error'
+    const a = { seen: [] as unknown[], async run(_m: string, input: unknown) { this.seen.push(input); throw new Error('offline') } }
+    const g = new ModelGate({ db, ai: a, mode: 'live', visitor: 'v', wsId: 'ws1', day: () => '2026-10-25' })
+    expect(await g.ask('audit', [{ role: 'user', content: 'u' }], 120, 'k-error')).toMatchObject({ text: 'recorded after error', source: 'replay' })
+    delete REPLAY['audit:k-error']
+  })
+
+  it('does not serve a cached answer stored under the unscoped key', async () => {
+    await db.prepare("INSERT INTO cache (key, value_json, at) VALUES ('audit:k-old-shape', '\"old answer\"', 1)").run()
+    const a = ai('fresh answer')
+    const g = new ModelGate({ db, ai: a, mode: 'live', visitor: 'v', wsId: 'ws1', day: () => '2026-10-25' })
+    expect(await g.ask('audit', [{ role: 'user', content: 'u' }], 120, 'k-old-shape')).toMatchObject({ text: 'fresh answer', source: 'live' })
+  })
+
+  it('does not serve a cache row saved under a different system prompt', async () => {
+    const oldPromptHash = (await sha256('old prompt')).slice(0, 12)
+    await db.prepare('INSERT INTO cache (key, value_json, at) VALUES (?, ?, ?)').bind(`audit:${MODEL_ID}:${oldPromptHash}:prompt-shift`, '"old prompt answer"', 1).run()
+    const ai = { run: async () => ({ response: 'fresh answer', usage: { neurons: 1 } }) }
+    const g = new ModelGate({ db, ai: ai as any, mode: 'live', visitor: 'v', wsId: 'ws1', day: () => '2026-10-25' })
+    const result = await g.ask('audit', [{ role: 'system', content: 'new prompt' }, { role: 'user', content: 'hi' }], 120, 'prompt-shift')
+    expect(result).toMatchObject({ text: 'fresh answer', source: 'live' })
   })
 
   it('answers null without calling the model once the budget is spent', async () => {

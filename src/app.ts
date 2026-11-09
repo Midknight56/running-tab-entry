@@ -15,6 +15,7 @@ import { withTab, type TabCtx } from './tab/with-tab'
 import { agentTools } from './tab/agent-tools'
 import { agentByKeyHash, callsOfTab, type Agent, type Tab } from './tab/ledger'
 import { businessDays, convertTime, convertedTime, type Fault, type SellerCtx } from './demo/seller'
+import { checkConvertTime } from './demo/calendar-checks'
 import { DEMO_THRESHOLD_CENTS, bump, ipDayHash, readCookie, sha256Hex } from './demo/workspace'
 
 export type AppCtx = TabCtx & SellerCtx
@@ -97,6 +98,7 @@ export function sellerServer(env: Env, now: () => number = Date.now) {
         const converted = convertedTime(args.date, String(args.time ?? ''), String(args.from ?? ''), String(args.to ?? ''))
         return answer.includes(converted.date) ? null : 'The request asked for a date; the answer gives none.'
       },
+      validate: checkConvertTime,
     }),
     ...agentTools,
   ]

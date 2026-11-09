@@ -21,4 +21,13 @@ describe('ask the desk, on the desk', () => {
   it('a value widget maps only its value', () => {
     expect(widgetState({ type: 'value', title: 'Refunded', value: 'tabs.refunded', aggregation: 'sum' }).dataMapping).toEqual({ value: [{ id: 'tabs.refunded', aggregation: 'sum' }] })
   })
+
+  it('shows the scope in widget format subtitle', () => {
+    const spec = { type: 'column-chart-stacked', title: 'Struck calls by agent', scope: 'Counts only calls with status STRUCK.', category: 'struck.agent', value: 'struck.call', aggregation: 'count' }
+    const state = widgetState(spec)
+    expect(state.format).toEqual({
+      title: { enabled: true, text: 'Struck calls by agent' },
+      subtitle: { enabled: true, text: 'Counts only calls with status STRUCK.' },
+    })
+  })
 })

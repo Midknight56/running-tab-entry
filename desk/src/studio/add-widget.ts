@@ -1,6 +1,6 @@
 // Turns an "Ask the desk" spec into a Studio widget at the top of the desk page.
 import type { AgStudioApi } from 'ag-studio'
-export interface WidgetSpec { type: string; title: string; category?: string; value: string; aggregation: string; split?: string }
+export interface WidgetSpec { type: string; title: string; scope?: string; category?: string; value: string; aggregation: string; split?: string }
 
 interface Layout { xTrack: number; yTrack: number; xSpan: number; ySpan: number }
 interface Page { id: string; widgets?: Record<string, unknown>; widgetLayout?: Record<string, Layout> }
@@ -14,7 +14,14 @@ export function widgetState(spec: WidgetSpec) {
   const dataMapping = spec.type === 'value'
     ? { value }
     : { categoryKey: [{ id: spec.category }], valueKey: value, ...(spec.split ? { legendKey: [{ id: spec.split }] } : {}) }
-  return { type: spec.type, dataMapping, format: { title: { enabled: true, text: spec.title } } }
+  return {
+    type: spec.type,
+    dataMapping,
+    format: {
+      title: { enabled: true, text: spec.title },
+      ...(spec.scope ? { subtitle: { enabled: true, text: spec.scope } } : {}),
+    },
+  }
 }
 
 export function addWidget(state: State, spec: WidgetSpec, id: string): State {

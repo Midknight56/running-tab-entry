@@ -64,7 +64,7 @@ test('long desk values and actions fit at phone widths', async ({ page }) => {
   const firstMeter = page.getByRole('list', { name: 'Tabs by agent' }).locator('.rt-meter-row').first()
   await expect(firstMeter.locator('.rt-meter-name')).toContainText('A very long scheduler agent name')
   await expect(firstMeter.locator('.rt-meter-amount')).toContainText('$9999.99')
-  await page.getByRole('button', { name: 'Pay with a test card' }).click()
+  await page.getByRole('button', { name: 'Pay by card' }).click()
   await page.unrouteAll({ behavior: 'ignoreErrors' })
 })
 

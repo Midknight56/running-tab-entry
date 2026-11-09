@@ -14,7 +14,7 @@ function fakeAi() {
     jobs,
     async run(_model: string, input: any) {
       const system: string = input.messages[0].content
-      const user = JSON.parse(input.messages.at(-1).content)
+      const user = JSON.parse(input.messages.at(-1).content.replace(/ \/no_think$/, ''))
       const reply = (o: unknown) => ({ response: JSON.stringify(o), usage: { prompt_tokens: 400, completion_tokens: 40 } })
       if (system.startsWith('You audit')) {
         jobs.push('audit')

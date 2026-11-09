@@ -8,7 +8,7 @@ async function setup() {
   const k = await (await d.connect()).json() as any
   d.env.AI_MODE = 'live'
   d.env.AI = { run: async (_model: unknown, input: any) => {
-    const request = JSON.parse(input.messages.at(-1).content)
+    const request = JSON.parse(input.messages.at(-1).content.replace(' /no_think', ''))
     return { response: JSON.stringify({ call_id: request.call_id, verdict: 'keep', reason_code: '', evidence: '' }), usage: { neurons: 1 } }
   } } as any
   const lines: string[] = []

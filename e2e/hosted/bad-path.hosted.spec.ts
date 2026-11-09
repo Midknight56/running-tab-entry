@@ -39,7 +39,7 @@ test('hosted bad path keeps payment and workspace boundaries intact', async ({ p
   console.log(`03 forged webhook: HTTP ${forged.status()}, desk state Due`)
 
   const cardResponsePromise = page.waitForResponse((response) => response.url().includes('/api/sandbox/card-pay/') && response.request().method() === 'POST')
-  await page.getByRole('button', { name: 'Pay with a test card' }).click()
+  await page.getByRole('button', { name: 'Pay by card' }).click()
   const cardResponse = await cardResponsePromise
   expect(cardResponse.status()).toBe(200)
   await expect(page.locator('.rt-meter-row').first()).toHaveAttribute('data-state', 'PAID', { timeout: 30_000 })

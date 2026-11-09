@@ -5,12 +5,15 @@
 // A full demo run costs its calculated worst case: six audits, one claim, one note and three explain rounds.
 // Each call is charged before it runs using the input character cap, four characters per token, and output token cap.
 // These prices were read 6 Nov 2026 from the pricing page: 5,500 neurons per million input tokens and 36,400 per
-// million output tokens. The page lists $0.060 and $0.400 per million; at $0.011 per 1,000 neurons and 10,000 free
-// neurons each day, no charge is due within the daily limits. Worst case per job is calculated from the caps in the
-// budget test: audit 12.618; claim 16.824; note 13.710; explain_round 18.280; widget 9.585; studio_round 78.700 neurons.
+// million output tokens. The page lists $0.060 and $0.400 per million;
+// at $0.011 per 1,000 neurons and 10,000 free neurons each day, no charge is due within the daily limits.
+// Worst case per job, computed in the budget test: audit 6,000 chars (1,500 input, 120 output tokens) costs 12.618;
+// claim 8,000 chars (2,000 input, 160 output tokens) costs 16.824; note 6,000 chars (1,500 input, 150 output tokens)
+// costs 13.710; explain_round 8,000 chars (2,000 input, 200 output tokens) costs 18.280; widget 3,000 chars (750 input,
+// 150 output tokens) costs 9.585; studio_round 44,000 chars (11,000 input, 500 output tokens) costs 78.700 neurons.
 // One uncached demo run costs 161.082 neurons: six audits, one claim, one note and three explain rounds. A desk widget
 // uses one widget call. Repeat calls use the cache. A test computes these values so this comment cannot drift.
-// After each call the difference between the worst case and Workers AI own count (`usage.neurons`) is given back to every counter, so the caps track what was really spent.
+// After each call the difference between the worst case and Workers AI own count (usage.neurons) is given back to every counter, so the caps track what was really spent.
 
 export const MODEL_ID = '@cf/zai-org/glm-4.7-flash'
 const IN_PER_TOKEN = 5500 / 1_000_000
@@ -20,8 +23,8 @@ const OUT_PER_TOKEN = 36400 / 1_000_000
 export const RT_DAILY_NEURONS = 1500
 /** One visitor's share of the day (by the daily hash of their IP, never the IP itself). */
 export const VISITOR_DAILY_NEURONS = 300
-// Daily cost is $0: the app's 1,500 neurons sits under the joint 9,000 under the free 10,000. At worst case, the daily
-// share covers 9 full demo runs (1,500 divided by 161.082).
+// A key shares out the free day. Daily cost is $0: the app's 1,500 a day sits under the joint 9,000 under the free 10,000.
+// At the calculated worst case, 1,500 neurons cover 9 full demo runs.
 export const KEY_DAILY_NEURONS = 60
 /** Every hackathon app together, in the shared ledger: 1,000 under the free 10,000, so a slow count cannot tip it. */
 export const JOINT_DAILY_NEURONS = 9000

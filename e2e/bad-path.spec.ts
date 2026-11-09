@@ -63,7 +63,7 @@ test('the test card pays the tab, and the claim after it is refunded', async ({ 
   await asVisitor(page)
   await setMock(page, { capture: 'ok' })
   await runToDue(page)
-  await page.getByRole('button', { name: 'Pay with a test card' }).click()
+  await page.getByRole('button', { name: 'Pay by card' }).click()
   await expect(page.locator('.rt-meter-row').first()).toHaveAttribute('data-state', 'PAID', { timeout: 15_000 })
   await page.getByRole('button', { name: 'Agent reports call 24' }).click()
   await expect(page.getByTestId('flow-refunded')).toHaveText('$0.25', { timeout: 60_000 })

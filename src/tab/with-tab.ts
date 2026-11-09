@@ -41,6 +41,7 @@ export interface TabOptions {
   price_cents: number
   audit?: 'code' | 'model'
   requires?: (args: Record<string, unknown>, answer: string) => string | null
+  validate?: (args: Record<string, unknown>, result: ToolResult) => { reason_code: string; evidence: string } | 'HOLD' | 'UNCHECKED' | null
 }
 
 export type TabbedTool<C> = Tool<C> & { tab: TabOptions }
@@ -134,14 +135,30 @@ export function withTab<C extends TabCtx>(tool: Tool<C>, opts: TabOptions): Tabb
           } catch { /* A broken seller rule does not block billing. */ }
         }
         if (rule) outcome = { status: 'STRUCK', reason_code: rule.reason_code, evidence: rule.evidence, judged_by: 'code' }
-        else if (opts.audit === 'model') {
-          outcome = rt.modelAudit
-            ? await rt.modelAudit({
-              tool: tool.name, args, answer_text: textOf(result), structured: result.structuredContent,
-              price_cents: opts.price_cents, ws_id: rt.agent.ws_id,
-            }).catch((): AuditOutcome => ({ status: 'PENDING_AUDIT' }))
-            : { status: 'PENDING_AUDIT' }
-        } else outcome = { status: 'BILLABLE' }
+        else {
+          let validation: { reason_code: string; evidence: string } | 'HOLD' | 'UNCHECKED' | null = null
+          if (opts.validate) {
+            try {
+              validation = opts.validate(args, result)
+            } catch {
+              validation = 'HOLD'
+            }
+          }
+          if (validation === 'HOLD') {
+            outcome = { status: 'PENDING_AUDIT' }
+          } else if (validation && validation !== 'UNCHECKED') {
+            outcome = { status: 'STRUCK', reason_code: validation.reason_code, evidence: validation.evidence, judged_by: 'code' }
+          } else if (opts.audit === 'model') {
+            outcome = rt.modelAudit
+              ? await rt.modelAudit({
+                tool: tool.name, args, answer_text: textOf(result), structured: result.structuredContent,
+                price_cents: opts.price_cents, ws_id: rt.agent.ws_id,
+              }).catch((): AuditOutcome => ({ status: 'PENDING_AUDIT' }))
+              : { status: 'PENDING_AUDIT' }
+            // The seller's check could not read the answer: the model may strike it, but cannot bill it alone.
+            if (validation === 'UNCHECKED' && outcome.status === 'BILLABLE') outcome = { status: 'PENDING_AUDIT' }
+          } else outcome = { status: validation === 'UNCHECKED' ? 'PENDING_AUDIT' : 'BILLABLE' }
+        }
 
         const recorded = await recordCall(rt.db, {
           agent: rt.agent, tab, tool: tool.name, args, result: { content: result.content, structuredContent: result.structuredContent, isError: result.isError },

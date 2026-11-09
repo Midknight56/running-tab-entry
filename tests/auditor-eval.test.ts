@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { AUDIT_SYSTEM, makeModelAudit } from '../src/audit/auditor'
+import { AUDIT_SCHEMA, AUDIT_SYSTEM, makeModelAudit } from '../src/audit/auditor'
 import { checkAuditVerdict } from '../src/audit/checks'
 import type { ModelGate } from '../src/ai/model'
 import { businessDays, convertTime } from '../src/demo/seller'
@@ -20,8 +20,9 @@ describe('auditor labelled cases with fixed verdicts', () => {
     const result = await convertTime.run(args, { fault })
     expect(result.content[0].text).toBe(answer)
     let asks = 0
-    const gate = { ask: async (_job, messages) => {
+    const gate = { ask: async (_job, messages, _maxTokens, _key, schema) => {
       asks++
+      expect(schema).toEqual(AUDIT_SCHEMA)
       expect(messages[0].content).toBe(AUDIT_SYSTEM)
       const sent = JSON.parse(messages[1].content)
       expect(sent.answer).toBe(answer)

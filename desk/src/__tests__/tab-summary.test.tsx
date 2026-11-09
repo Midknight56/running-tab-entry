@@ -27,13 +27,34 @@ it('groups tool rows in descending amount with struck calls after the total', ()
 it('shows only the total while a pending call leaves the tool sum incomplete', () => {
   expect(billRows(tab(), [call(), call({ status: 'PENDING_AUDIT', price_cents: 490 })])).toEqual([{ label: 'Total', cents: 515, kind: 'total' }])
 })
-it('shows refunded and net paid after the total', () => {
-  expect(billRows(tab({ state: 'PAID', refunded_cents: 25, refunded_done_cents: 25 }), calls).slice(-4)).toEqual([
-    { label: 'Total', cents: 515, kind: 'total' }, { label: 'Refunded', cents: -25 }, { label: 'Net paid', cents: 490 },
-    { label: 'Struck, not billed', detail: '3 calls', cents: 35, kind: 'struck' },
+it('reads metered call value, struck before payment, captured, refund completed, net paid in that order', () => {
+  const paidTab = tab({ state: 'PAID', total_cents: 515, captured_cents: 515, refunded_cents: 25, refunded_done_cents: 25 })
+  const rows = billRows(paidTab, calls)
+  const paidRows = rows.slice(-5)
+  expect(paidRows).toEqual([
+    { label: 'Metered call value', cents: 550 },
+    { label: 'Struck before payment', detail: '3 calls', cents: 35, kind: 'struck' },
+    { label: 'Captured', cents: 515, kind: 'total' },
+    { label: 'Refund completed', cents: 25 },
+    { label: 'Net paid', cents: 490, kind: 'total' },
   ])
-  const view = render(<TabSummary agent={agent} tabs={[tab({ state: 'PAID', refunded_cents: 25, refunded_done_cents: 25 })]} calls={calls} />)
-  expect(view.getByLabelText('Bill').textContent).toContain('-$0.25')
+  const view = render(<TabSummary agent={agent} tabs={[paidTab]} calls={calls} />)
+  const billText = view.getByLabelText('Bill').textContent ?? ''
+  const mIndex = billText.indexOf('Metered call value')
+  const sIndex = billText.indexOf('Struck before payment')
+  const cIndex = billText.indexOf('Captured')
+  const rIndex = billText.indexOf('Refund completed')
+  const nIndex = billText.indexOf('Net paid')
+  expect(mIndex).toBeGreaterThan(-1)
+  expect(sIndex).toBeGreaterThan(mIndex)
+  expect(cIndex).toBeGreaterThan(sIndex)
+  expect(rIndex).toBeGreaterThan(cIndex)
+  expect(nIndex).toBeGreaterThan(rIndex)
+  expect(billText).toContain('$5.50')
+  expect(billText).toContain('$0.35')
+  expect(billText).toContain('$5.15')
+  expect(billText).toContain('$0.25')
+  expect(billText).toContain('$4.90')
   expect(view.getByTestId('sum-line').textContent).toBe('Nothing left to pay on this tab.')
 })
 it('uses singular call forms and omits an absent struck sentence', () => {

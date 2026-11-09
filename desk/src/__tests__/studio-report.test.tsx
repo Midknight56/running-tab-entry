@@ -1,6 +1,8 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { AgReportState, AgStudioApi, AgStudioProperties } from 'ag-studio'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 const studio = vi.hoisted(() => ({ props: null as AgStudioProperties | null, state: null as AgReportState | null, mounts: [] as AgReportState[], crash: false }))
 vi.mock('ag-studio-react', async () => {
@@ -179,7 +181,7 @@ it('saves a chart added through the ask form', async () => {
 it.each([0, 2100])('shows chart scope and truncation only when needed for total %s', async calls_total => {
   setup(null, { ...data, calls_total } as DeskData)
   const view = await mount()
-  const scope = screen.getByText('Charts use this session and demo history. Split by Session to tell them apart.')
+  const scope = screen.getByText('Charts show this session only. Money totals never include the seeded tab.')
   expect(view.container.querySelector('.rt-ask')?.compareDocumentPosition(scope)! & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   expect(!!screen.queryByText('Charts use the newest 0 of 2100 calls.')).toBe(calls_total > 0)
 })
@@ -192,4 +194,13 @@ it('shows a report save failure', async () => {
   change({ ...saved, selectedPageId: 'changed' })
   await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
   expect(screen.getByRole('alert').textContent).toContain('Could not save the layout.')
+})
+
+it('gives the money widget room for its three parts, and lets it scroll rather than clip', async () => {
+  const layout = (initialReport as any).pages[0].widgetLayout
+  expect(layout.flow.ySpan).toBeGreaterThanOrEqual(26)
+  const css = readFileSync(resolve(process.cwd(), 'src/styles.css'), 'utf8')
+  expect(css).toMatch(/\.rt-widget-money \{[^}]*overflow: auto/)
+  const widgets = readFileSync(resolve(process.cwd(), 'src/studio/widgets.tsx'), 'utf8')
+  expect(widgets).toContain('rt-widget rt-widget-money')
 })

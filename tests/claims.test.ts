@@ -58,6 +58,22 @@ describe('claims and refunds', () => {
     expect((await tab()).refunded_cents).toBe(0)
   })
 
+  it('waits for the seller when a matching call is pending audit', async () => {
+    await seed()
+    await db.prepare("UPDATE calls SET status = 'PENDING_AUDIT' WHERE id = 'call_1'").run()
+    await db.prepare("UPDATE calls SET args_json = '{}' WHERE id = 'call_x'").run()
+    await db.prepare("UPDATE calls SET price_cents = 125 WHERE id = 'call_x'").run()
+    await db.prepare('UPDATE tabs SET total_cents = 150, captured_cents = 150').run()
+    const d = deps()
+    d.judge = makeClaimJudge({ ask: async () => ({ text: JSON.stringify({
+      verdict: 'approve', claim_names: 'DUPLICATE', reason_code: 'DUPLICATE', evidence: '09:00', cited_call_ids: [1, 2],
+    }) }) } as never)
+    const r = await fileClaim(d, agent, 2, 'billed twice')
+    expect(d.pp.calls).toHaveLength(0)
+    expect(r.claim.state).toBe('WAITING_SELLER')
+    expect((await tab()).refunded_cents).toBe(0)
+  })
+
   it('checks the automatic amount cap inside the reservation even with a stale approval', async () => {
     await seed({ captured: 5000, price: AUTO_REFUND_MAX_CENTS + 1 })
     await db.prepare(`INSERT INTO claims (id, ws_id, call_id, reason_text, state, created_at)

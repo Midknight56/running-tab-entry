@@ -15,14 +15,15 @@ describe('accessibility', () => {
   })
 
   it('exposes money labels and values as terms and definitions', () => {
-    const { container } = render(<MoneyFlow money={{ captured_cents: 515, refunded_cents: 25, struck_cents: 55, pending_cents: 0, net_cents: 490, plain_meter_cents: 570, kept_cents: 490, kept_out_cents: 80 }} />)
-    const pairs: Array<[string, string]> = [['Captured', '$5.15'], ['Struck, not billed', '$0.55'], ['Refunded', '$0.25'], ['Net', '$4.90']]
+    const receipt = { tab_id: 't1', agent_id: 'a1', metered_cents: 570, struck_cents: 55, captured_cents: 515, refunded_cents: 25, refund_pending_cents: 0, net_cents: 490 }
+    const { container } = render(<MoneyFlow money={{ captured_cents: 515, refunded_cents: 25, struck_cents: 55, pending_cents: 0, net_cents: 490, plain_meter_cents: 570, kept_cents: 490, kept_out_cents: 80 }} receipt={receipt} />)
+    const pairs: Array<[string, string]> = [['Metered call value', '$5.70'], ['Struck before payment', '$0.55'], ['Captured', '$5.15'], ['Refund completed', '$0.25'], ['Net paid', '$4.90']]
     for (const [label, value] of pairs) {
       const term = screen.getByText(label, { selector: 'dt' })
       const cell = term.closest('dl')!
       expect(within(cell).getByText(value, { selector: 'dd' }).tagName).toBe('DD')
     }
-    expect(container.querySelectorAll('.rt-flow-value[data-testid]')).toHaveLength(4)
+    expect(container.querySelectorAll('.rt-flow-value[data-testid]')).toHaveLength(5)
   })
 
   it('exposes money bars with labels and values', () => {
@@ -30,7 +31,7 @@ describe('accessibility', () => {
     expect(within(container).getByRole('progressbar', { name: 'Plain meter' }).getAttribute('aria-valuenow')).toBe('100')
     expect(within(container).getByRole('progressbar', { name: 'Running Tab' }).getAttribute('aria-valuenow')).toBe('86')
     expect(container.querySelector('.rt-flow-bars')?.getAttribute('aria-label')).toBe('Plain meter and Running Tab comparison')
-    expect(container.textContent).toContain('A plain meter bills $5.70. Running Tab charges $4.90 after refunds. The $0.80 gap: $0.55 struck, $0.25 refunded.')
+    expect(container.textContent).toContain('This session metered $5.70. $4.90 is kept or still billable: $0.55 was struck and $0.25 refunded.')
     expect(container.querySelectorAll('.rt-flow-bar-row')).toHaveLength(2)
   })
 

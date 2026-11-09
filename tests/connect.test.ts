@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { desk } from './helpers/connect'
 import { agentKey, sha256Hex } from '../src/demo/workspace'
-import { utcDay } from '../src/ai/budget'
+import { WORST, utcDay } from '../src/ai/budget'
 
 let d: Awaited<ReturnType<typeof desk>>
 afterEach(() => d?.db.raw.close())
@@ -69,17 +69,18 @@ describe('connect keys', () => {
     d.env.AI = { run: async (_model: unknown, input: any) => {
       runs++
       const request = JSON.parse(input.messages.at(-1).content)
-      return { response: JSON.stringify({ call_id: request.call_id, verdict: 'keep', reason_code: '', evidence: '' }), usage: { neurons: 10 } }
+      return { response: JSON.stringify({ call_id: request.call_id, verdict: 'keep', reason_code: '', evidence: '' }), usage: { neurons: WORST.audit } }
     } } as any
-    for (let i = 0; i < 8; i++) {
-      const r = await d.call(k.key, 'convert_time', { time: `0${i}:17`, date: '2026-10-28', from: 'America/Halifax', to: 'Europe/London' })
-      expect(r.result._meta['running-tab/call'].status).toBe(i < 5 ? 'BILLABLE' : 'PENDING_AUDIT')
+    const allowed = Math.floor(60 / WORST.audit)
+    for (let i = 0; i < allowed + 1; i++) {
+      const r = await d.call(k.key, 'convert_time', { time: `${String(i).padStart(2, '0')}:17`, date: '2026-10-28', from: 'America/Halifax', to: 'Europe/London' })
+      expect(r.result._meta['running-tab/call'].status).toBe(i < allowed ? 'BILLABLE' : 'PENDING_AUDIT')
     }
-    expect(runs).toBe(5)
+    expect(runs).toBe(allowed)
     const counters = (await d.db.prepare('SELECT key, n FROM counters').all<{ key: string; n: number }>()).results
-    expect(counters.find(c => c.key === `key:${k.agent_id}:${utcDay()}`)?.n).toBeCloseTo(50)
-    expect(counters.find(c => c.key === `neurons:${utcDay()}`)?.n).toBeCloseTo(50)
-    expect(counters.find(c => c.key.startsWith('visitor:'))?.n).toBeCloseTo(50)
+    expect(counters.find(c => c.key === `key:${k.agent_id}:${utcDay()}`)?.n).toBeCloseTo(allowed * WORST.audit)
+    expect(counters.find(c => c.key === `neurons:${utcDay()}`)?.n).toBeCloseTo(allowed * WORST.audit)
+    expect(counters.find(c => c.key.startsWith('visitor:'))?.n).toBeCloseTo(allowed * WORST.audit)
   })
 })
 

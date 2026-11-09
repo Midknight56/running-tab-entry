@@ -77,3 +77,110 @@ it('returns the newest 2000 calls and the complete workspace call count', async 
   expect(data.calls[0].seq).toBe(2001)
   expect(data.calls.at(-1)?.seq).toBe(2)
 })
+
+it('scopes money totals to the receipt, open tab, and session', async () => {
+  await db.prepare('INSERT INTO agents (id, ws_id, name, key_hash, created_at) VALUES (?, ?, ?, ?, ?)').bind('a', 'one', 'Scheduler bot', 'hash', 1).run()
+  await db.prepare(`INSERT INTO tabs (id, ws_id, agent_id, state, total_cents, threshold_cents, order_id, capture_id, captured_cents, refunded_cents, note, created_at, due_at, paid_at)
+    VALUES ('tab_paid', 'one', 'a', 'PAID', 515, 500, 'ORD1', 'CAP1', 515, 25, NULL, 10, 15, 20)`).run()
+
+  for (let i = 1; i <= 8; i++) {
+    await db.prepare(`INSERT INTO calls (id, seq, ws_id, agent_id, tab_id, tool, args_json, result_json, price_cents, status, created_at)
+      VALUES (?, ?, 'one', 'a', 'tab_paid', 'business_days', '{}', '{}', 5, 'BILLABLE', ?)`).bind(`c${i}`, i, i).run()
+  }
+  for (let i = 9; i <= 27; i++) {
+    await db.prepare(`INSERT INTO calls (id, seq, ws_id, agent_id, tab_id, tool, args_json, result_json, price_cents, status, created_at)
+      VALUES (?, ?, 'one', 'a', 'tab_paid', 'convert_time', '{}', '{}', 25, 'BILLABLE', ?)`).bind(`c${i}`, i, i).run()
+  }
+  await db.prepare(`INSERT INTO calls (id, seq, ws_id, agent_id, tab_id, tool, args_json, result_json, price_cents, status, created_at)
+    VALUES ('c28', 28, 'one', 'a', 'tab_paid', 'convert_time', '{}', '{}', 25, 'STRUCK', 28)`).run()
+  await db.prepare(`INSERT INTO calls (id, seq, ws_id, agent_id, tab_id, tool, args_json, result_json, price_cents, status, created_at)
+    VALUES ('c29', 29, 'one', 'a', 'tab_paid', 'business_days', '{}', '{}', 5, 'STRUCK', 29)`).run()
+  await db.prepare(`INSERT INTO calls (id, seq, ws_id, agent_id, tab_id, tool, args_json, result_json, price_cents, status, created_at)
+    VALUES ('c30', 30, 'one', 'a', 'tab_paid', 'business_days', '{}', '{}', 5, 'STRUCK', 30)`).run()
+
+  await db.prepare(`INSERT INTO claims (id, ws_id, call_id, reason_text, verdict, reason_code, refund_id, refund_status, state, created_at)
+    VALUES ('k1', 'one', 'c24', 'dup', 'approve', 'DUPLICATE', 'REF1', 'COMPLETED', 'REFUNDED', 25)`).run()
+
+  await db.prepare(`INSERT INTO tabs (id, ws_id, agent_id, state, total_cents, threshold_cents, order_id, capture_id, captured_cents, refunded_cents, note, created_at, due_at, paid_at)
+    VALUES ('tab_open', 'one', 'a', 'OPEN', 25, 500, NULL, NULL, 0, 0, NULL, 30, NULL, NULL)`).run()
+  await db.prepare(`INSERT INTO calls (id, seq, ws_id, agent_id, tab_id, tool, args_json, result_json, price_cents, status, created_at)
+    VALUES ('c31', 31, 'one', 'a', 'tab_open', 'convert_time', '{}', '{}', 25, 'BILLABLE', 31)`).run()
+
+  const data = await deskData(db, 'one') as any
+  expect(data.receipt).toEqual({
+    tab_id: 'tab_paid',
+    agent_id: 'a',
+    agent_name: 'Scheduler bot',
+    order_id: 'ORD1',
+    capture_id: 'CAP1',
+    metered_cents: 550,
+    struck_cents: 35,
+    captured_cents: 515,
+    refunded_cents: 25,
+    refund_pending_cents: 0,
+    net_cents: 490,
+  })
+  expect(data.open_tab).toEqual({
+    tab_id: 'tab_open',
+    agent_id: 'a',
+    state: 'OPEN',
+    total_cents: 25,
+    calls: 1,
+  })
+  expect(data.session).toEqual({
+    metered_cents: 575,
+    kept_or_billable_cents: 515,
+    struck_cents: 35,
+    refunded_cents: 25,
+    pending_audit_cents: 0,
+  })
+
+  await db.prepare(`INSERT INTO calls (id, seq, ws_id, agent_id, tab_id, tool, args_json, result_json, price_cents, status, created_at)
+    VALUES ('c32', 32, 'one', 'a', 'tab_open', 'convert_time', '{}', '{}', 25, 'BILLABLE', 32)`).run()
+  await db.prepare('UPDATE tabs SET total_cents = 50 WHERE id = ?').bind('tab_open').run()
+
+  const afterCall = await deskData(db, 'one') as any
+  expect(afterCall.session.metered_cents).toBe(600)
+  expect(afterCall.session.kept_or_billable_cents).toBe(540)
+  expect(afterCall.receipt.net_cents).toBe(490)
+  expect(afterCall.open_tab.total_cents).toBe(50)
+  expect(afterCall.open_tab.calls).toBe(2)
+})
+
+it('flags a due tab whose card payment was sent but got no answer', async () => {
+  await db.prepare('INSERT INTO agents (id, ws_id, name, key_hash, created_at) VALUES (?, ?, ?, ?, ?)').bind('a', 'one', 'Scheduler bot', 'hash', 1).run()
+  for (const id of ['tab_lost', 'tab_fresh', 'tab_plain']) {
+    await db.prepare(`INSERT INTO tabs (id, ws_id, agent_id, state, total_cents, threshold_cents, order_id, capture_id, captured_cents, refunded_cents, note, created_at, due_at, paid_at)
+      VALUES (?, 'one', 'a', 'DUE', 515, 500, NULL, NULL, 0, 0, NULL, 10, 15, NULL)`).bind(id).run()
+  }
+  const old = Date.now() - 60_000
+  await db.prepare(`INSERT INTO pay_attempts (tab_id, ws_id, method, request_id, body_json, state, created_at, updated_at, send_count)
+    VALUES ('tab_lost', 'one', 'card', 'r1', '{}', 'SENT', ?, ?, 1)`).bind(old, old).run()
+  await db.prepare(`INSERT INTO pay_attempts (tab_id, ws_id, method, request_id, body_json, state, created_at, updated_at, send_count)
+    VALUES ('tab_fresh', 'one', 'card', 'r2', '{}', 'SENT', ?, ?, 0)`).bind(Date.now(), Date.now()).run()
+  const data = await deskData(db, 'one') as any
+  const flag = (id: string) => data.tabs.find((t: any) => t.id === id).payment_checking
+  expect(flag('tab_lost')).toBe(true)
+  expect(flag('tab_fresh')).toBe(false)
+  expect(flag('tab_plain')).toBe(false)
+})
+
+it('picks the receipt and the current tab of the first agent, the same tab the desk bill shows, with two agents and two paid tabs', async () => {
+  await db.prepare('INSERT INTO agents (id, ws_id, name, key_hash, created_at) VALUES (?, ?, ?, ?, ?)').bind('a', 'one', 'Scheduler bot', 'hash', 1).run()
+  await db.prepare('INSERT INTO agents (id, ws_id, name, key_hash, created_at) VALUES (?, ?, ?, ?, ?)').bind('b', 'one', 'Travel desk agent', 'hash-b', 2).run()
+  await db.prepare(`INSERT INTO tabs (id, ws_id, agent_id, state, total_cents, threshold_cents, order_id, capture_id, captured_cents, refunded_cents, note, created_at, due_at, paid_at)
+    VALUES ('tab_a', 'one', 'a', 'PAID', 500, 500, 'ORDA', 'CAPA', 500, 0, NULL, 10, 15, 20),
+           ('tab_b', 'one', 'b', 'PAID', 505, 500, 'ORDB', 'CAPB', 505, 0, NULL, 30, 35, 40),
+           ('tab_a2', 'one', 'a', 'OPEN', 25, 500, NULL, NULL, 0, 0, NULL, 50, NULL, NULL),
+           ('tab_b2', 'one', 'b', 'OPEN', 5, 500, NULL, NULL, 0, 0, NULL, 60, NULL, NULL)`).run()
+  await db.prepare(`INSERT INTO calls (id, seq, ws_id, agent_id, tab_id, tool, args_json, result_json, price_cents, status, created_at)
+    VALUES ('ca1', 1, 'one', 'a', 'tab_a', 'convert_time', '{}', '{}', 500, 'BILLABLE', 11),
+           ('cb1', 1, 'one', 'b', 'tab_b', 'convert_time', '{}', '{}', 505, 'BILLABLE', 31),
+           ('ca2', 2, 'one', 'a', 'tab_a2', 'convert_time', '{}', '{}', 25, 'BILLABLE', 51),
+           ('cb2', 2, 'one', 'b', 'tab_b2', 'business_days', '{}', '{}', 5, 'BILLABLE', 61)`).run()
+  const data = await deskData(db, 'one') as any
+  expect(data.receipt).toMatchObject({ tab_id: 'tab_a', agent_id: 'a', agent_name: 'Scheduler bot', capture_id: 'CAPA', captured_cents: 500 })
+  expect(data.money.receipt).toEqual(data.receipt)
+  expect(data.open_tab).toMatchObject({ tab_id: 'tab_a2', agent_id: 'a', total_cents: 25 })
+  expect(data.receipts.map((r: any) => [r.tab_id, r.agent_name, r.capture_id])).toEqual([['tab_b', 'Travel desk agent', 'CAPB'], ['tab_a', 'Scheduler bot', 'CAPA']])
+})

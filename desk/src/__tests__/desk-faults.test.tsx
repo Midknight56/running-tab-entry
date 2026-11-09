@@ -11,12 +11,11 @@ import { Panel, TryPanel } from '../Panel'
 import { loadDesk, runCalls, verifyLedger } from '../data'
 import { setDesk } from '../store'
 import { StruckLedger } from '../widgets/StruckLedger'
-import { billRows, TabSummary } from '../widgets/TabSummary'
+import { billRows, CHECK_SCOPE, TabSummary } from '../widgets/TabSummary'
 import { MoneyFlow } from '../widgets/MoneyFlow'
 import type { Call, Claim, DeskData, Tab } from '../types'
 
 const connectionError = 'Could not reach the desk. Check your connection and try again.'
-const scope = 'The auditor checks that each answer fits the request. It does not check the math.'
 const agent = { id: 'a1', name: 'Scheduler bot', created_at: 1 }
 const tab = (o: Partial<Tab> = {}): Tab => ({ id: 't', agent_id: 'a1', state: 'PAID', total_cents: 25, threshold_cents: 500, order_id: null, capture_id: 'cap', captured_cents: 25, refunded_cents: 0, note: null, created_at: 1, due_at: null, paid_at: 1, ...o })
 const call = (o: Partial<Call> = {}): Call => ({ id: 'c24', seq: 24, agent_id: 'a1', tab_id: 't', tool: 'convert_time', args: {}, answer: '', price_cents: 25, status: 'BILLABLE', reason_code: null, evidence: null, judged_by: null, duration_ms: 0, created_at: 1, ...o })
@@ -84,19 +83,21 @@ it.each([
 })
 
 it.each([0, 25])('keeps pending refunds separate from %s completed cents in money and receipt', done => {
-  const m = { ...money, refunded_cents: done, net_cents: 50 - done, kept_cents: 50 - done, kept_out_cents: 5 + done }
+  const receipt = { tab_id: 't1', agent_id: 'a1', metered_cents: 55, struck_cents: 5, captured_cents: 50, refunded_cents: done, refund_pending_cents: 25, net_cents: 50 - done }
+  const m = { ...money, refunded_cents: done, net_cents: 50 - done, kept_cents: 50 - done, kept_out_cents: 5 + done, refund_pending_cents: 25 }
   const paidTab = { ...tab({ total_cents: 50, captured_cents: 50, refunded_cents: done + 25 }), refund_pending_cents: 25, refunded_done_cents: done }
-  const view = render(<><MoneyFlow money={m} /><TabSummary agent={agent} tabs={[paidTab]} calls={[]} /></>)
+  const view = render(<><MoneyFlow money={m} receipt={receipt} /><TabSummary agent={agent} tabs={[paidTab]} calls={[]} /></>)
   expect(view.getByText('Refund pending: $0.25')).toBeTruthy()
   expect(view.getByTestId('flow-net').textContent).toBe(done ? '$0.25' : '$0.50')
-  expect(view.container.querySelectorAll('.rt-flow-cell')).toHaveLength(4)
-  expect(view.getByTestId('flow-line').textContent).toContain(done ? 'The $0.30 gap: $0.05 struck, $0.25 refunded.' : 'The $0.05 gap: $0.05 struck.')
-  expect(view.getByTestId('flow-line').textContent).toContain('$0.25 pending at PayPal is still included in the charge.')
+  expect(view.getByTestId('flow-pending').textContent).toBe('$0.25')
+  expect(view.getByTestId('flow-refunded').textContent).toBe(done ? '$0.25' : '$0.00')
+  expect(view.getByTestId('flow-line').textContent).toContain('$0.25 of refunds is pending at PayPal and still counted as kept.')
+  expect(view.getByTestId('flow-line').textContent).not.toContain('after refunds')
   const rows = billRows(paidTab, [])
   expect(rows).toContainEqual({ label: 'Refund pending', cents: 25 })
-  expect(rows).toContainEqual({ label: 'Net paid', cents: 50 - done })
-  if (done) expect(rows).toContainEqual({ label: 'Refunded', cents: -done })
-  else expect(rows.some(row => row.label === 'Refunded')).toBe(false)
+  expect(rows).toContainEqual({ label: 'Net paid', cents: 50 - done, kind: 'total' })
+  if (done) expect(rows).toContainEqual({ label: 'Refund completed', cents: done })
+  else expect(rows.some(row => row.label === 'Refund completed')).toBe(false)
 })
 
 it('normalizes rejected action requests', async () => {
@@ -111,7 +112,7 @@ it.each([loadDesk, () => verifyLedger('a1')])('returns null after a rejected rea
 
 it.each([
   ['Run the agent', '/api/demo/run', 'run'],
-  ['Pay with a test card', '/api/sandbox/card-pay/t', 'card'],
+  ['Pay by card', '/api/sandbox/card-pay/t', 'card'],
   ['Add chart', '/api/desk/ask', 'ask'],
   ['Verify ledger', '/api/ledger/verify/a1', 'verify'],
   ['Refund call 24', '/api/claims/k/approve', 'refund'],
@@ -176,13 +177,12 @@ it('retries rejected polls at 3, 6 and 10 seconds and resets after success', asy
   expect(vi.getTimerCount()).toBe(0)
 })
 
-it.each([true, false])('renders the auditor scope in the right place with phone %s', async narrow => {
+it.each([true, false])('renders the check scope beside the bill with phone %s', async narrow => {
   vi.stubGlobal('matchMedia', () => ({ matches: narrow, addEventListener() {}, removeEventListener() {} }))
   mockDesk(desk())
-  const view = render(<App license={null} />)
-  const note = await screen.findByText(scope)
-  const before = narrow ? screen.getByTestId('tab-summary') : view.container.querySelector('.rt-ask-note')!
-  expect(before.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  render(<App license={null} />)
+  const summary = await screen.findByTestId('tab-summary')
+  const note = within(summary).getByText(CHECK_SCOPE)
   if (narrow) {
     const form = await screen.findByRole('region', { name: 'Try to break it' })
     expect(note.compareDocumentPosition(form) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
@@ -239,11 +239,10 @@ it('keeps the empty claim state for an unpaid billable call', () => {
   expect(screen.queryByRole('combobox')).toBeNull()
 })
 
-it('keeps the combined log closed by default', () => {
+it('keeps the combined log in a section the visitor can fold', () => {
   const view = render(<Panel trace={[]} events={[]} />)
   const summary = screen.getByText('PayPal and model log')
   expect(summary.tagName).toBe('SUMMARY')
-  expect(summary.closest('details')?.open).toBe(false)
   expect(view.container.querySelector('details .rt-panel')).toBeTruthy()
 })
 
@@ -258,4 +257,18 @@ it('keeps the Studio calls report as the original AG Grid widget', () => {
   expect(report).toContain("type: 'grid'")
   expect(report).toContain("f('calls.call'), f('calls.agent'), f('calls.tool'), f('calls.status'), f('calls.reason'), f('calls.judged_by'), f('calls.price'), f('calls.seconds')")
   expect(widgets).not.toContain('rt-call-ledger')
+})
+
+it('keeps Agent reports call 24 after a rejected claim on another call, and hides it once call 24 is claimed', async () => {
+  const calls = [call(), call({ id: 'c30', seq: 30 })]
+  const rejected = claim({ id: 'k30', call_id: 'c30', call_seq: 30, state: 'REJECTED', verdict: 'reject' })
+  mockDesk(desk({ calls, claims: [rejected] }))
+  const view = render(<App license={null} />)
+  await screen.findByRole('region', { name: 'Try to break it' })
+  expect(await screen.findByRole('button', { name: 'Agent reports call 24' })).toBeTruthy()
+  view.unmount()
+  mockDesk(desk({ calls, claims: [rejected, claim({ state: 'REFUNDED', refund_status: 'COMPLETED' })] }))
+  render(<App license={null} />)
+  await screen.findByRole('region', { name: 'Try to break it' })
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Agent reports call 24' })).toBeNull())
 })

@@ -1,40 +1,14 @@
 import { writeFile } from 'node:fs/promises'
+import { AUDITOR_GROUPS, AUDITOR_HEADER, AUDITOR_LEGEND, auditorCounts as countRows, auditorLine, auditorResult, auditorTotals as totalRows, rowAPassed } from './attack-table.mjs'
 
 const defaultBase = 'https://running-tab.midknight-labs.workers.dev'
 const base = (process.env.RT_BASE ?? process.argv[2] ?? defaultBase).replace(/\/$/, '')
 const today = new Date().toISOString().slice(0, 10)
 const rows = []
 const auditorRows = []
-const auditorGroups = [
-  { label: 'good', count: 6, expected: 'Kept and billed', good: true },
-  { label: 'off', count: 4, expected: 'Struck or held unbilled', mustNotBill: true },
-  { label: 'incomplete', count: 4, expected: 'Struck by code (INCOMPLETE)', mustNotBill: true },
-  { label: 'wrong', count: 4, expected: 'Bad answer; may be billed because the auditor does not check math' },
-  { label: 'inject', count: 4, expected: 'Struck or held unbilled', mustNotBill: true },
-  { label: 'vague', count: 4, expected: 'Struck or held unbilled' },
-  { label: 'repeat', count: 4, expected: 'Kept and billed each time; no duplicate claim filed', good: true },
-]
-
-function auditorCounts() {
-  return auditorGroups.map((group) => {
-    const calls = auditorRows.filter((r) => r.group === group.label)
-    return {
-      ...group, recorded: calls.length,
-      kept: calls.filter((r) => r.actual === 'BILLABLE').length,
-      struck: calls.filter((r) => r.actual === 'STRUCK').length,
-      held: calls.filter((r) => r.actual === 'PENDING_AUDIT').length,
-    }
-  })
-}
-
-function auditorTotals() {
-  const groups = auditorCounts()
-  return {
-    falseCharges: groups.filter((g) => !g.good).reduce((n, g) => n + g.kept, 0),
-    falseStrikes: groups.filter((g) => g.good).reduce((n, g) => n + g.struck, 0),
-    held: groups.reduce((n, g) => n + g.held, 0),
-  }
-}
+const auditorGroups = AUDITOR_GROUPS
+const auditorCounts = () => countRows(auditorRows)
+const auditorTotals = () => totalRows(auditorRows)
 const outputPath = new URL('../../docs/ATTACKS.md', import.meta.url)
 const runStartedAt = Date.now()
 
@@ -71,15 +45,15 @@ function report() {
     '| --- | --- | --- | --- | --- | --- |',
     ...auditorCounts().map((g) => `| ${g.label} (${g.count}) | ${g.expected} | ${g.recorded} | ${g.kept} | ${g.struck} | ${g.held} |`),
     '',
-    '| Label | Call | Expected | Actual | Result |',
-    '| --- | --- | --- | --- | --- |',
-    ...auditorRows.map((r) => `| ${r.label} | ${r.call} | ${r.expected} | ${r.actual} | ${r.passed ? 'PASS' : 'FAIL'} |`),
+    AUDITOR_HEADER,
+    '| --- | --- | --- | --- | --- | --- | --- |',
+    ...auditorRows.map(auditorLine),
     '',
     `False charges: ${auditorTotals().falseCharges}.`,
     `False strikes: ${auditorTotals().falseStrikes}.`,
     `Held: ${auditorTotals().held}.`,
     '',
-    'The auditor does not check math. Billed wrong answers count as false charges and do not fail row A. A copied quote locates evidence; it does not prove the verdict is right.',
+    AUDITOR_LEGEND,
     'Repeated legitimate requests are billed separately. The claim rules allow a later duplicate claim; these repeat cases file no claim.',
     '',
     `Measured neurons: ${auditorNeurons === null ? 'not shown in desk data' : auditorNeurons}.`,
@@ -324,10 +298,10 @@ try {
   const totals = auditorTotals()
   const allLabeled = auditorRows.length === 30 && auditCalls.length === 30 && new Set(auditorRows.map((r) => r.call)).size === 30 && groups.every((g) => g.recorded === g.count && g.kept + g.struck + g.held === g.count)
   const groupResults = groups.map((g) => `${g.label}: expected ${g.expected}; kept and billed ${g.kept}; struck ${g.struck}; held unbilled ${g.held}`).join('; ')
-  row('A', 'Auditor limits across seven labelled groups; the auditor does not check math', 'No false strikes; all 30 results recorded; off, incomplete and inject never billed; wrong answers billed are false charges but do not fail this row; under 40 model calls', `${groupResults}; false charges ${totals.falseCharges}; false strikes ${totals.falseStrikes}; held ${totals.held}; ${auditCalls.length} model audited calls at 25 cents each; ${modelCalls} model calls in this run`, allLabeled && modelCalls < 40 && totals.falseStrikes === 0 && auditorRows.every((r) => r.passed))
+  row('A', 'Answer checks across seven labelled groups; the time check covers convert_time, the model review checks relevance', 'No false charges and no false strikes; all 30 results recorded; off, incomplete, wrong, inject and vague never billed; under 40 model calls', `${groupResults}; false charges ${totals.falseCharges}; false strikes ${totals.falseStrikes}; held ${totals.held}; ${auditCalls.length} model audited calls at 25 cents each; ${modelCalls} model calls in this run`, rowAPassed(auditorRows, { auditedCalls: auditCalls.length, modelCalls }) && allLabeled)
 
   await saveAndPrint()
-  if (rows.some((r) => !r.passed) || auditorRows.some((r) => !r.passed)) process.exitCode = 1
+  if (rows.some((r) => !r.passed) || auditorRows.some((r) => auditorResult(r) !== 'PASS')) process.exitCode = 1
 } catch (error) {
   row('X', 'Run completed', 'All attack cases recorded', error instanceof Error ? error.message : String(error), false)
   await saveAndPrint()

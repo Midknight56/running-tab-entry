@@ -70,27 +70,32 @@ const money = (id: string, name: string) => ({ id, name, format: 'currencyFormat
 
 /** Rows for Studio's data engine: one source per table, money in dollars for charts. Fields are declared, so an empty
  *  workspace still has a schema. */
-export function studioSources(d: DeskData) {
+export function studioSources(d: DeskData, opts: { includeHistory?: boolean } = {}) {
   const name = (id: string) => d.agents.find((a) => a.id === id)?.name ?? ''
+  // Seeded rows belong to the seeded tab: charts leave them out unless the seller turns them on.
+  const sampleTabs = new Set(d.tabs.filter((t) => t.note === 'demo history').map((t) => t.id))
+  const keep = (tabId?: string | null) => opts.includeHistory || !sampleTabs.has(tabId ?? '')
+  const shownCalls = d.calls.filter((c) => keep(c.tab_id))
+  const callTab = new Map(d.calls.map((c) => [c.id, c.tab_id]))
   const calls = {
     id: 'calls', name: 'Calls',
     fields: [int('call', 'Call'), text('agent', 'Agent'), text('tool', 'Tool'), text('status', 'Status'), text('reason', 'Reason'),
       text('judged_by', 'Judged by'), money('price', 'Price'), { id: 'seconds', name: 'Seconds', format: 'decimalFormat' }, text('day', 'Day'), text('history', 'Session')],
-    data: d.calls.map((c) => ({
+    data: shownCalls.map((c) => ({
       call: c.seq, agent: name(c.agent_id), tool: c.tool, status: c.status, reason: c.reason_code ?? '', judged_by: c.judged_by ?? '',
       price: c.price_cents / 100, seconds: Math.round(c.duration_ms / 100) / 10, day: new Date(c.created_at).toISOString().slice(0, 10),
-      history: d.tabs.find((t) => t.id === c.tab_id)?.note === 'demo history' ? 'demo history' : 'this session',
+      history: sampleTabs.has(c.tab_id) ? 'Seeded tab' : 'This session',
     })),
   }
   const tabs = {
     id: 'tabs', name: 'Tabs',
     fields: [text('tab', 'Tab'), text('agent', 'Agent'), text('state', 'State'), money('total', 'Total'), money('captured', 'Captured'), money('refunded', 'Refunded'), text('order', 'PayPal order'), text('capture', 'PayPal capture')],
-    data: d.tabs.map((t) => ({ tab: t.id, agent: name(t.agent_id), state: t.state, total: t.total_cents / 100, captured: t.captured_cents / 100, refunded: (t.refunded_done_cents ?? 0) / 100, order: t.order_id ?? '', capture: t.capture_id ?? '' })),
+    data: d.tabs.filter((t) => keep(t.id)).map((t) => ({ tab: t.id, agent: name(t.agent_id), state: t.state, total: t.total_cents / 100, captured: t.captured_cents / 100, refunded: (t.refunded_done_cents ?? 0) / 100, order: t.order_id ?? '', capture: t.capture_id ?? '' })),
   }
   const claims = {
     id: 'claims', name: 'Claims',
     fields: [int('call', 'Call'), text('agent', 'Agent'), text('reason', 'Reason'), text('state', 'State'), money('amount', 'Amount'), text('refund', 'PayPal refund'), text('claim', 'Claim')],
-    data: d.claims.map((k) => ({ call: k.call_seq, agent: name(k.agent_id), reason: k.reason_code ?? '', state: k.state, amount: (k.price_cents ?? 0) / 100, refund: k.refund_id ?? '', claim: k.reason_text })),
+    data: d.claims.filter((k) => keep(callTab.get(k.call_id))).map((k) => ({ call: k.call_seq, agent: name(k.agent_id), reason: k.reason_code ?? '', state: k.state, amount: (k.price_cents ?? 0) / 100, refund: k.refund_id ?? '', claim: k.reason_text })),
   }
   return [
     calls, tabs, { ...claims, id: 'refunds', name: 'Refunds', data: claims.data.filter(k => k.state === 'REFUNDED') },

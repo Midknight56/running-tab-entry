@@ -34,7 +34,7 @@ body { background: var(--rt-bg); color: var(--rt-text); font: 15px/1.4 var(--rt-
 .rt-app { display: flex; flex-direction: column; min-height: 100%; }
 .rt-top { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 16px; background: var(--rt-surface); border-bottom: 1px solid var(--rt-border); }
 .rt-top h1 { font-size: 18px; margin: 0; }
-.rt-sandbox { font-size: 12px; border: 1px solid var(--rt-border); border-radius: 999px; padding: 2px 8px; }
+.rt-provider { font-size: 12px; border: 1px solid var(--rt-border); border-radius: 999px; padding: 2px 8px; }
 .rt-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-left: auto; }
 .rt-btn { font: inherit; min-height: 44px; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--rt-border); background: var(--rt-surface); color: var(--rt-text); cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; }
 .rt-btn:disabled { opacity: .6; cursor: default; }
@@ -101,15 +101,22 @@ body { background: var(--rt-bg); color: var(--rt-text); font: 15px/1.4 var(--rt-
 .rt-phone-claim { margin: 12px 16px 0; }
 .rt-scope { margin: 12px 16px 0; color: var(--rt-dim); font-size: 12px; }
 .rt-evidence { display: block; margin-top: 4px; color: var(--rt-dim); font-style: italic; }
-.rt-flow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px 12px; height: 100%; align-content: start; min-width: 0; }
-.rt-flow-cell { display: flex; flex-direction: column; gap: 2px; margin: 0; }
+.rt-flow { display: flex; flex-direction: column; gap: 16px; height: 100%; align-content: start; min-width: 0; }
+.rt-flow-group { display: flex; flex-direction: column; gap: 8px; }
+.rt-flow-group h3 { font-size: 13px; font-weight: 600; margin: 0; color: var(--rt-dim); }
+.rt-flow-cells { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.rt-widget-money { overflow: auto; }
+.rt-flow-id { margin: 0 0 6px; font-size: 12px; color: var(--rt-dim); overflow-wrap: anywhere; }
+.rt-sum-capture { margin: 4px 0 0; font-size: 12px; color: var(--rt-dim); overflow-wrap: anywhere; }
+.rt-billed-request { display: block; font-size: 12px; color: var(--rt-dim); overflow-wrap: anywhere; }
+.rt-flow-cell { display: flex; flex-direction: column; gap: 2px; margin: 0; min-width: 100px; }
 .rt-flow-label { font-size: 12px; color: var(--rt-dim); }
 .rt-flow-value { margin: 0; font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .rt-flow-struck .rt-flow-value { color: var(--rt-struck); }
 .rt-flow-net .rt-flow-value { color: var(--rt-accent); }
-/* The plain meter line and its two bars sit under the four figures, across the whole widget. */
-.rt-flow-line { grid-column: 1 / -1; margin: 0; font-size: 13px; overflow-wrap: anywhere; }
-.rt-flow-bars { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.rt-flow-current { margin: 0; font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.rt-flow-line { margin: 0; font-size: 13px; overflow-wrap: anywhere; }
+.rt-flow-bars { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .rt-flow-bar-row { min-width: 0; }
 .rt-flow-bar-head { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; font-variant-numeric: tabular-nums; }
 .rt-flow-bar-track { height: 8px; margin-top: 3px; overflow: hidden; border-radius: 999px; background: var(--rt-bg); }
@@ -120,7 +127,6 @@ body { background: var(--rt-bg); color: var(--rt-text); font: 15px/1.4 var(--rt-
   .rt-main { grid-template-columns: 1fr; }
   .rt-side { max-height: 420px; }
   .rt-actions { margin-left: 0; width: 100%; }
-  .rt-flow { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .rt-flow-bars { grid-template-columns: 1fr; }
 }
 
@@ -168,3 +174,20 @@ body { background: var(--rt-bg); color: var(--rt-text); font: 15px/1.4 var(--rt-
 @media (min-width: 901px) {
   .rt-sum-bill { grid-template-columns: minmax(0, 1fr) minmax(0, 360px); }
 }
+
+/* First visit guide: the demo steps, waiting states, folded payment details, struck row request and answer. */
+.rt-steps { list-style: none; display: flex; flex-wrap: wrap; gap: 8px 12px; margin: 12px 16px 0; padding: 0; font-size: 13px; }
+.rt-step { display: flex; align-items: center; gap: 6px; color: var(--rt-dim); }
+.rt-step-n { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 999px; border: 1px solid var(--rt-border); font-size: 11px; }
+.rt-step-done .rt-step-n { border-color: var(--rt-ok); color: var(--rt-ok); }
+.rt-step-now { color: inherit; font-weight: 600; }
+.rt-step-now .rt-step-n { background: var(--rt-accent); border-color: var(--rt-accent); color: var(--rt-on-accent); }
+.rt-step-note { font-weight: 400; color: var(--rt-dim); }
+.rt-sum-state { margin: 8px 0 0; font-size: 13px; color: var(--rt-due); }
+.rt-sum-scope { margin: 8px 0 0; }
+.rt-history-toggle { display: flex; align-items: center; gap: 6px; }
+.rt-pay-details { margin-top: 12px; }
+.rt-pay-details > summary { cursor: pointer; font-weight: 600; padding: 8px 0; min-height: 24px; }
+.rt-ledger-request, .rt-ledger-answer { display: block; margin: 4px 0 0; font-size: 12px; overflow-wrap: anywhere; }
+.rt-ledger-label { font-weight: 600; color: var(--rt-text, inherit); }
+.rt-ledger-answer { color: var(--rt-dim); }

@@ -11,14 +11,15 @@ import { deskAi } from './studio/ai'
 import { addWidget, studioApi } from './studio/add-widget'
 import { usd } from './types'
 import { ConnectCard } from './ConnectCard'
-import { TabSummary } from './widgets/TabSummary'
+import { TabSummary, CHECK_SCOPE } from './widgets/TabSummary'
+import { StepBar, deskStep } from './steps'
 import { TabMeter } from './widgets/TabMeter'
 import { MoneyFlow } from './widgets/MoneyFlow'
+import { deskReceipt, newestPaid } from './selection'
 import { StruckLedger } from './widgets/StruckLedger'
 import { ClaimSelection, type ClaimPick } from './claim-selection'
 
 type Busy = '' | 'run' | 'after' | 'card'
-const AUDITOR_SCOPE = 'The auditor checks that each answer fits the request. It does not check the math.'
 const LOAD_ERROR = 'The desk could not load. Reload the page.'
 
 export function App({ license }: { license: string | null }) {
@@ -39,6 +40,7 @@ export function App({ license }: { license: string | null }) {
   const [ledgerResult, setLedgerResult] = useState('')
   const [built, setBuilt] = useState(0)
   const [triesLeft, setTriesLeft] = useState(5)
+  const [includeHistory, setIncludeHistory] = useState(false)
   const desk = useDesk()
   const params = new URLSearchParams(location.search)
   const narrow = useNarrow()
@@ -81,8 +83,12 @@ export function App({ license }: { license: string | null }) {
   const scheduler = desk.agents[0]
   const myTabs = desk.tabs.filter((t) => scheduler && t.agent_id === scheduler.id && t.note !== 'demo history')
   const due = myTabs.find((t) => t.state === 'DUE')
-  const paid = myTabs.find((t) => t.state === 'PAID')
-  const claimed = desk.claims.some((k) => scheduler && k.agent_id === scheduler.id)
+  const paid = newestPaid(myTabs)
+  // The demo claim is on call 24 of that paid tab; a claim on any other call leaves the button in place.
+  const call24 = paid && desk.calls.find((c) => c.tab_id === paid.id && c.seq === 24)
+  const claimed = !call24 || desk.claims.some((k) => k.call_id === call24.id)
+  const myClaim = desk.claims.filter((k) => scheduler && k.agent_id === scheduler.id).sort((a, b) => b.created_at - a.created_at)[0]
+  const step = deskStep(due ?? paid ?? [...myTabs].sort((a, b) => b.created_at - a.created_at)[0], myClaim, busy === 'card')
   const waiting = desk.claims.filter((k) => k.state === 'WAITING_SELLER' || (k.state === 'APPROVED' && (k.refund_status ?? '').startsWith('FAILED')))
 
   async function run() {
@@ -155,7 +161,7 @@ export function App({ license }: { license: string | null }) {
     <div className="rt-app">
       <header className="rt-top">
         <h1>Running Tab</h1>
-        <span className="rt-dim rt-sandbox">PayPal sandbox</span>
+        <span className="rt-dim rt-provider">PayPal</span>
         {!sessionRefused && <div className="rt-actions">
           <button className="rt-btn" disabled={!scheduler || checkingLedger} onClick={checkLedger}>{checkingLedger ? 'Verifying ledger' : 'Verify ledger'}</button>
           {!narrow && <button className="rt-btn rt-quiet" onClick={() => setEditing((v) => !v)}>{editing ? 'Done' : 'Edit desk'}</button>}
@@ -166,20 +172,20 @@ export function App({ license }: { license: string | null }) {
           <button className="rt-btn rt-quiet" onClick={() => setShowKey((v) => !v)}>Connect an agent</button>
         </div>}
       </header>
+      {!sessionRefused && <StepBar step={step} claim={myClaim} />}
       {params.get('cancelled') && <p className="rt-note">Payment cancelled. The tab is still due.</p>}
       {params.get('pay_failed') && <p className="rt-note rt-bad">Payment did not go through. The tab is still open.</p>}
       {error && <p className="rt-note rt-bad" role="alert">{error}</p>}
       {report.error && <p className="rt-note rt-bad" role="alert">{report.error}</p>}
       {ledgerResult && <p className="rt-note" role="status">{ledgerResult}</p>}
       {!sessionRefused && <>
-        <TabSummary agent={scheduler} tabs={desk.tabs} calls={desk.calls}>
+        <TabSummary agent={scheduler} tabs={desk.tabs} calls={desk.calls} claims={desk.claims}>
             {!due && !paid && <button className="rt-btn rt-primary" disabled={!session || !!busy} onClick={run}>{busy === 'run' ? 'Agent running' : 'Run the agent'}</button>}
             {due && <a className="rt-btn rt-primary" href={`/pay/${due.id}`}>Pay {usd(due.total_cents)} with PayPal</a>}
-            {due && <button className="rt-btn" disabled={!!busy} onClick={() => card(due.id)}>{busy === 'card' ? 'Paying' : 'Pay with a test card'}</button>}
+            {due && <button className="rt-btn" disabled={!!busy} onClick={() => card(due.id)}>{busy === 'card' ? 'Paying' : 'Pay by card'}</button>}
             {paid && !claimed && <button className="rt-btn rt-primary" disabled={!!busy} onClick={after}>{busy === 'after' ? 'Claim in progress' : 'Agent reports call 24'}</button>}
             {waiting.map((k) => <button key={k.id} className="rt-btn" disabled={!!refunding} onClick={() => refund(k.id)}>{refunding === k.id ? 'Refunding' : `Refund call ${k.call_seq}`}</button>)}
         </TabSummary>
-        {narrow && <p className="rt-scope">{AUDITOR_SCOPE}</p>}
         {narrow && session && desk.ws_id && <div className="rt-phone-claim"><TryPanel agents={desk.agents} calls={desk.calls} tabs={desk.tabs} triesLeft={triesLeft} claimPick={claimPick} /></div>}
         {showKey && session && (
           <ConnectCard session={session} agents={desk.agents} tabs={desk.tabs} />
@@ -196,9 +202,10 @@ export function App({ license }: { license: string | null }) {
           <button className="rt-btn" type="submit" disabled={asking || !question.trim()}>{asking ? 'Building' : 'Add chart'}</button>
           {built > 0 && <span className="rt-dim" data-testid="built-count">{built} added</span>}
           <p className="rt-ask-note">The desk builds charts. It cannot refund, approve claims or change prices.</p>
-          <p className="rt-ask-note">{AUDITOR_SCOPE}</p>
+          <p className="rt-ask-note">{CHECK_SCOPE}</p>
         </form>}
-        <p className="rt-scope">Charts use this session and demo history. Split by Session to tell them apart.</p>
+        {!narrow && <label className="rt-scope rt-history-toggle"><input type="checkbox" checked={includeHistory} onChange={(e) => setIncludeHistory(e.target.checked)} /> Include seeded tab</label>}
+        {!narrow && <p className="rt-scope" data-testid="chart-scope">{includeHistory ? 'Charts show this session and the seeded tab, labelled in the Session field.' : 'Charts show this session only. Money totals never include the seeded tab.'}</p>}
         {(desk.calls_total ?? desk.calls.length) > desk.calls.length && <p className="rt-scope">Charts use the newest {desk.calls.length} of {desk.calls_total} calls.</p>}
         <main className="rt-main">
           {!sessionRefused && (!session || !desk.ws_id) ? (
@@ -206,18 +213,20 @@ export function App({ license }: { license: string | null }) {
           ) : narrow ? (
             <div className="rt-phone" data-testid="phone-desk">
               <section><h2>Tabs</h2><TabMeter agents={desk.agents} tabs={desk.tabs} /></section>
-              <section><h2>Money</h2><MoneyFlow money={desk.money} /></section>
-              <section><h2>Struck and refunded</h2><StruckLedger agents={desk.agents} calls={desk.calls} claims={desk.claims} limit={5} /></section>
+              <section><h2>Money</h2><MoneyFlow money={desk.money} receipt={deskReceipt(desk)} open_tab={desk.open_tab} session={desk.session} /></section>
+              <section><h2>Struck and refunded</h2><StruckLedger agents={desk.agents} calls={desk.calls} claims={desk.claims} tabs={desk.tabs} limit={5} /></section>
             </div>
           ) : (
             <div className="rt-studio">
-              {session && desk.ws_id && report.state && <StudioBoundary onReset={report.reset}><Studio license={license} editing={editing} state={report.state} onChange={report.update} /></StudioBoundary>}
+              {session && desk.ws_id && report.state && <StudioBoundary onReset={report.reset}><Studio license={license} editing={editing} state={report.state} onChange={report.update} includeHistory={includeHistory} /></StudioBoundary>}
             </div>
           )}
           {!sessionRefused && session && desk.ws_id && <aside className="rt-side">
-            <h2>Behind the scenes</h2>
             {!narrow && <TryPanel agents={desk.agents} calls={desk.calls} tabs={desk.tabs} triesLeft={triesLeft} claimPick={claimPick} />}
-            <Panel trace={desk.trace} events={desk.events} />
+            <details className="rt-pay-details" data-testid="payment-details">
+              <summary>Payment details</summary>
+              <Panel trace={desk.trace} events={desk.events} />
+            </details>
           </aside>}
         </main>
       </>}
@@ -227,30 +236,30 @@ export function App({ license }: { license: string | null }) {
 }
 
 /** AG Studio with the desk's data engine, kept current as new rows arrive. */
-function Studio({ license, editing, state, onChange }: { license: string | null; editing: boolean; state: AgReportState; onChange(state: AgReportState): void }) {
+function Studio({ license, editing, state, onChange, includeHistory }: { license: string | null; editing: boolean; state: AgReportState; onChange(state: AgReportState): void; includeHistory: boolean }) {
   const desk = useDesk()
   const engine = useRef<ReturnType<typeof createDataEngine> | null>(null)
   const api = useRef<AgStudioApi | null>(null)
   const initial = useRef(state)
   const seen = useRef('')
-  if (!engine.current) engine.current = createDataEngine({ sources: studioSources(desk) } as never)
+  if (!engine.current) engine.current = createDataEngine({ sources: studioSources(desk, { includeHistory }) } as never)
   useEffect(() => () => {
     if (studioApi.current === api.current) studioApi.current = null
     api.current = null
   }, [])
   useEffect(() => {
     // Charts query once; after new rows land they are asked to query again. Only real changes count.
-    const sig = JSON.stringify([desk.calls.map((c) => c.id + c.status), desk.tabs.map((t) => t.state + t.total_cents), desk.claims.map((k) => k.state)])
+    const sig = JSON.stringify([includeHistory, desk.calls.map((c) => c.id + c.status), desk.tabs.map((t) => t.state + t.total_cents), desk.claims.map((k) => k.state)])
     if (sig === seen.current) return
     seen.current = sig
     try {
-      engine.current?.update?.({ sources: studioSources(desk) } as never)
+      engine.current?.update?.({ sources: studioSources(desk, { includeHistory }) } as never)
       // Charts query once; reload asks every widget to query the engine again, keeping the layout.
       api.current?.reload()
     } catch (e) {
       console.error('Studio update failed', e)
     }
-  }, [desk])
+  }, [desk, includeHistory])
   const modules = useMemo(() => [AgStudioAiModule], [])
   return (
     <AgStudioProvider licenseKey={license ?? undefined} modules={modules as never}>
