@@ -40,6 +40,18 @@ database, the PayPal routes and the checks for each tool.
 
 Try it: [hosted app](https://running-tab.midknight-labs.workers.dev/) and [health page](https://running-tab.midknight-labs.workers.dev/health) (PayPal sandbox; no real money moves).
 
+## Judging criteria at a glance
+
+**Technological Implementation.** PayPal Orders v2 checkout and capture with line items, partial refunds against captures, and verified webhook signatures, with stable request ids on every order, capture and refund. AI: GLM 4.7 Flash on Cloudflare Workers AI reviews answers, judges claims and explains bills. Code sets every price and refund amount.
+
+**Design.** One seller desk for tool calls, check decisions, checkout, claims and refunds, built with AG Studio and AG Grid. The paid receipt keeps money apart: metered $5.50, struck before payment $0.35, captured $5.15, refund completed $0.25, net paid $4.90.
+
+**Potential Impact.** For sellers of MCP tools who charge AI agents per call. In one fixed scenario a plain meter charges $13.25 and 24 failed or unwanted calls; Running Tab charges $7.65 and 0, for the same 37 valid calls.
+
+**Innovation/Idea.** Calls that fail the seller's checks come off the bill before PayPal settles it. Agents can file claims against a billed call, and "Verify ledger" finds the first changed call in a signed hash chain.
+
+**Presentation.** The video runs 2 minutes 55 seconds. "Connect an agent" at https://running-tab.midknight-labs.workers.dev gives judges an MCP endpoint and a temporary buyer key. On 9 Nov 2026 all 45 rows of the live test script passed on the hosted app.
+
 ## How it works
 
 1. An agent calls a priced tool. The call is logged with its price in cents.
