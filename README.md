@@ -42,15 +42,17 @@ Try it: [hosted app](https://running-tab.midknight-labs.workers.dev/) and [healt
 
 ## Judging criteria at a glance
 
-**Technological Implementation.** PayPal Orders v2 checkout and capture with line items, partial refunds against captures, and verified webhook signatures, with stable request ids on every order, capture and refund. AI: GLM 4.7 Flash on Cloudflare Workers AI reviews answers, judges claims and explains bills. Code sets every price and refund amount.
+**In short.** Running Tab is for sellers of MCP tools who charge AI agents per call. Calls go on a tab, and calls that fail the seller's checks come off before PayPal settles it. At $5 the tab becomes one PayPal order. An agent can file a claim against a call. An AI judge reads the claim against the log, and a valid claim gets a PayPal partial refund. Code sets every price and every refund amount.
+
+**Technological Implementation.** PayPal Orders v2 checkout and capture with line items, partial refunds against captures, and verified webhook signatures, with stable request ids on every order, capture and refund. AI: GLM 4.7 Flash on Cloudflare Workers AI reviews answers, judges claims and explains bills. Code sets every price and refund amount. Check it: [src/paypal/orders.ts](https://github.com/Midknight56/running-tab-entry/blob/main/src/paypal/orders.ts), [src/paypal/webhooks.ts](https://github.com/Midknight56/running-tab-entry/blob/main/src/paypal/webhooks.ts), [src/bill/settle.ts](https://github.com/Midknight56/running-tab-entry/blob/main/src/bill/settle.ts), [src/claims/judge.ts](https://github.com/Midknight56/running-tab-entry/blob/main/src/claims/judge.ts), [src/claims/refund.ts](https://github.com/Midknight56/running-tab-entry/blob/main/src/claims/refund.ts).
 
 **Design.** One seller desk for tool calls, check decisions, checkout, claims and refunds, built with AG Studio and AG Grid. The paid receipt keeps money apart: metered $5.50, struck before payment $0.35, captured $5.15, refund completed $0.25, net paid $4.90.
 
-**Potential Impact.** For sellers of MCP tools who charge AI agents per call. In one fixed scenario a plain meter charges $13.25 and 24 failed or unwanted calls; Running Tab charges $7.65 and 0, for the same 37 valid calls.
+**Potential Impact.** For sellers of MCP tools who charge AI agents per call. In one fixed scenario a plain meter charges $13.25 and 24 failed or unwanted calls; Running Tab charges $7.65 and 0, for the same 37 valid calls. Sources: [docs/IMPACT-CASE.md](https://github.com/Midknight56/running-tab-entry/blob/main/docs/IMPACT-CASE.md).
 
-**Innovation/Idea.** Calls that fail the seller's checks come off the bill before PayPal settles it. Agents can file claims against a billed call, and "Verify ledger" finds the first changed call in a signed hash chain.
+**Innovation/Idea.** Calls that fail the seller's checks come off the bill before PayPal settles it. Agents can file claims against a billed call, and "Verify ledger" finds the first changed call in a signed hash chain. A plain meter charges first and leaves refunds for later. Here a bad call is struck before PayPal charges. Check it: [docs/ATTACKS.md](https://github.com/Midknight56/running-tab-entry/blob/main/docs/ATTACKS.md).
 
-**Presentation.** The video runs 2 minutes 55 seconds. "Connect an agent" at https://running-tab.midknight-labs.workers.dev gives judges an MCP endpoint and a temporary buyer key. On 9 Nov 2026 all 45 rows of the live test script passed on the hosted app.
+**Presentation.** The video runs 2 minutes 55 seconds. "Connect an agent" at https://running-tab.midknight-labs.workers.dev gives judges an MCP endpoint and a temporary buyer key. On 9 Nov 2026 all 45 rows of the live test script passed on the hosted app. Video guide: 0:09 agents call priced tools over MCP; 0:50 the $5 tab becomes one PayPal order; 1:18 a double charge claim gets a PayPal refund; 1:51 a claim that demands a $10 refund is refused; 2:01 connect your own agent.
 
 ## How it works
 
